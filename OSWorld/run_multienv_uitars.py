@@ -184,9 +184,13 @@ def run_env_tasks(env_idx: int, env: DesktopEnv, agent, env_tasks: dict, args: a
                 )
             except Exception as e:
                 logger.error(f"Exception in Env{env_idx+1} {domain}/{example_id}: {e}")
-                env.controller.end_recording(
-                    os.path.join(example_result_dir, "recording.mp4")
-                )
+                if hasattr(env, 'controller') and env.controller is not None:
+                    try:
+                        env.controller.end_recording(
+                            os.path.join(example_result_dir, "recording.mp4")
+                        )
+                    except:
+                        pass
                 with open(os.path.join(example_result_dir, "traj.jsonl"), "a") as f:
                     f.write(
                         json.dumps(
@@ -249,7 +253,7 @@ def test(args: argparse.Namespace, test_all_meta: dict) -> None:
             screen_size=(args.screen_width, args.screen_height),
             headless=args.headless,
             os_type = "Ubuntu",
-            provider_name="docker",
+            provider_name="singularity",
             require_a11y_tree=args.observation_type
             in ["a11y_tree", "screenshot_a11y_tree", "som"],
         )
@@ -357,6 +361,7 @@ def get_result(action_space, use_model, observation_type, result_dir, trial_id, 
 if __name__ == "__main__":
     ####### The complete version of the list of examples #######
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["OSWORLD_SIF_IMAGE"] = "/public/home/xlwang/genalyu/3SPO/osworld-sandbox"
     args = config()
 
     with open(args.test_all_meta_path, "r", encoding="utf-8") as f:

@@ -925,15 +925,12 @@ class RayPPOTrainer:
                                 r = compute_wm_r1_reward(
                                     is_success=eval_results_list[i] > 0.5,
                                     traj_len=traj_len_list[i],
-                                    n_wm=n_wm_list[i],
-                                    n_wm_max=self.config.env.n_wm_max,
                                     max_steps=self.config.env.max_steps,
                                     avg_len_ref=getattr(self.config.env, "avg_len_ref", 5.0),
                                     current_episode=self.global_step, # Assuming global_step is current episode
                                     total_episodes=self.config.trainer.total_episodes,
                                     alpha=getattr(self.config.reward, "alpha", 1.0),
                                     beta=getattr(self.config.reward, "beta", 0.5),
-                                    gamma=getattr(self.config.reward, "gamma", 0.5)
                                 )
                                 rewards.append(r)
                             

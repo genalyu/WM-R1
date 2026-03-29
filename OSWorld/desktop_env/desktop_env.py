@@ -79,7 +79,7 @@ class DesktopEnv(gym.Env):
         self.require_terminal = require_terminal
 
         # Initialize emulator and controller
-        if provider_name != "docker": # Check if this is applicable to other VM providers
+        if provider_name not in ["docker", "singularity"]: # Check if this is applicable to other VM providers
             logger.info("Initializing...")
             self._start_emulator()
 

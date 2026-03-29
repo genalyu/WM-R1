@@ -7,7 +7,7 @@ import psutil
 import requests
 from filelock import FileLock
 from pathlib import Path
-
+import subprocess
 from desktop_env.providers.base import Provider
 
 logger = logging.getLogger("desktopenv.providers.docker.DockerProvider")
@@ -25,6 +25,7 @@ class PortAllocationError(Exception):
 class DockerProvider(Provider):
     def __init__(self, region: str):
         self.client = docker.from_env()
+
         self.server_port = None
         self.vnc_port = None
         self.chromium_port = None
@@ -36,41 +37,19 @@ class DockerProvider(Provider):
         self.lock_file = temp_dir / "docker_port_allocation.lck"
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # def _get_used_ports(self):
-    #     """Get all currently used ports (both system and Docker)."""
-    #     # Get system ports
-    #     system_ports = set(conn.laddr.port for conn in psutil.net_connections())
-        
-    #     # Get Docker container ports
-    #     docker_ports = set()
-    #     for container in self.client.containers.list():
-    #         ports = container.attrs['NetworkSettings']['Ports']
-    #         if ports:
-    #             for port_mappings in ports.values():
-    #                 if port_mappings:
-    #                     docker_ports.update(int(p['HostPort']) for p in port_mappings)
-        
-    #     return system_ports | docker_ports
-
     def _get_used_ports(self):
         """Get all currently used ports (both system and Docker)."""
+        # Get system ports
         system_ports = set(conn.laddr.port for conn in psutil.net_connections())
-        docker_ports = set()
         
-        for attempt in range(5):  # Retry up to 3 times
-            try:
-                for container in self.client.containers.list():
-                    ports = container.attrs['NetworkSettings']['Ports']
-                    if ports:
-                        for port_mappings in ports.values():
-                            if port_mappings:
-                                docker_ports.update(int(p['HostPort']) for p in port_mappings)
-                break  # Exit retry loop if successful
-            except docker.errors.NotFound:
-                logger.warning("Container not found, retrying...")
-                time.sleep(1)  # Wait before retrying
-        else:
-            logger.error("Failed to get container ports after retries.")
+        # Get Docker container ports
+        docker_ports = set()
+        for container in self.client.containers.list():
+            ports = container.attrs['NetworkSettings']['Ports']
+            if ports:
+                for port_mappings in ports.values():
+                    if port_mappings:
+                        docker_ports.update(int(p['HostPort']) for p in port_mappings)
         
         return system_ports | docker_ports
 

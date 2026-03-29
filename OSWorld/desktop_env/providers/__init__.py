@@ -26,5 +26,9 @@ def create_vm_manager_and_provider(provider_name: str, region: str):
         from desktop_env.providers.docker.manager import DockerVMManager
         from desktop_env.providers.docker.provider import DockerProvider
         return DockerVMManager(), DockerProvider(region)
+    elif provider_name == "singularity":
+        from desktop_env.providers.singularity.manager import SingularityVMManager
+        from desktop_env.providers.singularity.provider import SingularityProvider
+        return SingularityVMManager(), SingularityProvider(region)
     else:
         raise NotImplementedError(f"{provider_name} not implemented!")

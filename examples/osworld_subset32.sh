@@ -43,7 +43,7 @@ python3 -m verl.trainer.main \
     worker.rollout.max_num_batched_tokens=128000 \
     algorithm.disable_kl=True \
     algorithm.kl_coef=0 \
-    algorithm.enable_replay=True \
+    algorithm.enable_replay=False \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15 \
     trainer.experiment_name=osworld_cot_7b_nokl_subset32 \
