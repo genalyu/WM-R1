@@ -6,8 +6,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=256G
-#SBATCH --output=/public/home/xlwang/genalyu/3SPO/logs/eval_%j.out
-#SBATCH --error=/public/home/xlwang/genalyu/3SPO/logs/eval_%j.err
+#SBATCH --output=/public/home/xlwang/genalyu/WM-R1/logs/eval_%j.out
+#SBATCH --error=/public/home/xlwang/genalyu/WM-R1/logs/eval_%j.err
 
 source ~/.bashrc
 # --- 关键：环境初始化 (Conda 激活) ---
@@ -16,10 +16,10 @@ source /public/home/xlwang/jyy/anaconda/etc/profile.d/conda.sh  # 路径根据�
 # 或者使用: source $(conda info --base)/etc/profile.d/conda.sh
 
 # 2. 激活环境
-conda activate 3spo
+conda activate wm-r1
 
 # 3. 确保当前目录在项目根目录
-cd /public/home/xlwang/genalyu/3SPO  # 替换为你的真实绝对路径
+cd /public/home/xlwang/genalyu/WM-R1  # 替换为你的真实绝对路径
 
 # --- 步骤 1: 启动模型推理服务 ---
 echo "Starting model server..."
@@ -47,13 +47,13 @@ python run_multienv_uitars.py \
     --max_steps 15 \
     --max_trajectory_length 15 \
     --temperature 0.6 \
-    --model qwen2-5-vl-3b\
+    --model evocua-8b\
     --action_space pyautogui \
     --num_envs 8 \
     --result_dir ./results/ \
     --test_all_meta_path ./evaluation_examples/test_all.json \
     --trial-id 0 \
-    --path_to_vm /public/home/xlwang/genalyu/3SPO/OSWorld/docker_vm_data/Ubuntu.qcow2 \
+    --path_to_vm /public/home/xlwang/genalyu/WM-R1/OSWorld/docker_vm_data/Ubuntu.qcow2 \
     --server_ip http://127.0.0.1
 
 # --- 步骤 3: 清理 ---

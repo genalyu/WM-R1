@@ -1,7 +1,7 @@
 #!/bin/bash
 
-model=/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct
-model_name=qwen2-5-vl-3b
+model=/public/home/xlwang/genalyu/models/EvoCUA-8B-20260105
+model_name=evocua-8b
 num_images=16
 
 port=9000
