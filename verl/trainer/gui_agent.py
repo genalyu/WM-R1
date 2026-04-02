@@ -17,7 +17,8 @@ from qwen_vl_utils import process_vision_info
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../Code2World'))
 from android_world.agents.wm_utils import MLLMInferencer, render_aligned_png, _post_figure_action
 
-from desktop_env.desktop_env import DesktopEnv
+# DesktopEnv is no longer used
+# from desktop_env.desktop_env import DesktopEnv
 
 
 class WorldModelEnv:
@@ -588,21 +589,9 @@ class EnvWorker():
         )
 
         self.model = 'uitars'
-        if self.use_wm:
-            print('Start to create world model env.')
-            self.env = WorldModelEnv(model_name=getattr(config.env, "wm_model_name", "internvl3-78b"))
-        else:
-            print('Start to create desktop_env.')
-            self.env = DesktopEnv(
-                provider_name="docker", 
-                action_space="pyautogui",
-                screen_size=(1920, 1080),
-                cache_dir=f"cache_dirs/cache_0",
-                # cache_dir=f"cache_dirs/cache_{self.worker_idx%32}",
-                headless=True,
-                os_type="Ubuntu",
-                require_a11y_tree=False
-            )
+        # Always use WorldModelEnv as OSWorld is no longer used.
+        print('Start to create world model env.')
+        self.env = WorldModelEnv(model_name=getattr(config.env, "wm_model_name", "internvl3-78b"))
 
         self.is_init = False
         self.is_done = False
@@ -845,87 +834,63 @@ class EnvWorker():
                 self.n_wm += 1
                 print(f"Detected World Model call in <think>: {imagined_action}")
 
-        origin_resized_height = obs_image_height = 1080
-        origin_resized_width = obs_image_width = 1920
-
         try:
             if is_imaginary:
                 # Handle imaginary turn: use World Model to get next state
-                # We reuse WorldModelEnv logic here even if self.use_wm is False
-                if not hasattr(self, 'wm_env'):
-                    self.wm_env = WorldModelEnv(model_name=getattr(self.config.env, "wm_model_name", "internvl3-78b"))
-                
-                # We need the current screenshot. If in DesktopEnv mode, get it from self.env
-                current_screenshot = self.history_images[-1]
-                if isinstance(current_screenshot, bytes):
-                    current_screenshot = np.array(Image.open(BytesIO(current_screenshot)))
-                
-                # Predict next state using World Model
-                html_path = os.path.join(self.wm_env.html_save_dir, f"imagined_{self.worker_idx}_{self.step_counter}.html")
-                next_state_array = _post_figure_action(
-                    inferencer=self.wm_env.inferencer,
-                    image_array=current_screenshot,
-                    action=imagined_action,
-                    html_save_path=html_path,
-                    idx=self.step_counter
-                )
-                
-                # Convert back to bytes for consistency
-                buffer = BytesIO()
-                Image.fromarray(next_state_array).save(buffer, format="JPEG")
-                obs_screenshot = buffer.getvalue()
-                
-                reward = 0.0
-                step_done = False
+                action_desc = imagined_action
                 info = {"imaginary": True}
                 actions = [f"Imagined: {imagined_action}"]
             else:
-                # Regular turn: execute action in the chosen environment
+                # Regular turn: also use World Model for simulation
                 parsed_responses = parse_action_to_structure_output(
                     prediction,
                     self.action_parse_res_factor,
-                    origin_resized_height,
-                    origin_resized_width,
+                    1080, # height
+                    1920, # width
                     self.model_type,
                     self.max_pixels,
                     self.min_pixels
                 )
 
                 actions = []
+                action_desc_parts = []
                 for parsed_response in parsed_responses:
                     if "action_type" in parsed_response:
                         if parsed_response["action_type"] == FINISH_WORD:
                             actions = ['DONE']
                             break
-                        
                         elif parsed_response["action_type"] == WAIT_WORD:
                             actions = ['WAIT']
                             break
-                        
                         elif parsed_response["action_type"] == ENV_FAIL_WORD:
                             actions = ['FAIL']
                             break
-
                         elif parsed_response["action_type"] == CALL_USER:
                             actions = ['FAIL']
                             break
-
-                    pyautogui_code = parsing_response_to_pyautogui_code(
-                        parsed_response,
-                        obs_image_height,
-                        obs_image_width,
-                        False # input_swap = False, don't use pyperclip
-                    )
-                    actions.append(pyautogui_code)
+                    
+                    # Convert parsed action back to a descriptive string for WM
+                    desc = f"{parsed_response.get('action_type', '')}({parsed_response.get('action_inputs', {})})"
+                    action_desc_parts.append(desc)
+                    actions.append(desc)
                 
-                format_reward = 0.0
+                action_desc = " | ".join(action_desc_parts)
+                info = {"simulated": True}
 
-                action_timestamp = datetime.datetime.now().strftime("%Y%m%d@%H%M%S")
-
-                self.env.unpause()
-                for action in actions:
-                    obs, reward, step_done, info = self.env.step(action, pause=0.5)
-                    obs_screenshot = obs['screenshot']
+            if actions[0] in ['DONE', 'FAIL', 'WAIT']:
+                reward = 0.0
+                step_done = (actions[0] != 'WAIT')
+                obs_screenshot = self.history_images[-1]
+            else:
+                # Execute simulation in WorldModelEnv
+                obs, reward, step_done, _ = self.env.step(action_desc)
+                obs_screenshot = obs['screenshot']
+                
+                # Convert back to bytes for consistency if it's a numpy array
+                if isinstance(obs_screenshot, np.ndarray):
+                    buffer = BytesIO()
+                    Image.fromarray(obs_screenshot).save(buffer, format="JPEG")
+                    obs_screenshot = buffer.getvalue()
             
             format_reward = 0.0
         except Exception as e:
