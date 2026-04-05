@@ -1,5 +1,6 @@
 import ast
 import re
+import json
 import math
 from PIL import Image
 import ray
@@ -69,9 +70,47 @@ class WorldModelEnv:
     def unpause(self):
         pass
 
-    def evaluate(self):
-        # Placeholder for evaluation in World Model mode
-        return 0.0
+    def evaluate(self, instruction=None):
+        """
+        Use LLM as a judge to evaluate if the task is completed based on the final screenshot.
+        """
+        if instruction is None:
+            if self.task_config:
+                instruction = self.task_config.get("instruction", "")
+            else:
+                return 0.0
+
+        judge_prompt = f"""You are an objective judge evaluating whether a GUI agent has successfully completed a task.
+The user's original instruction is: "{instruction}"
+
+Analyze the provided final screenshot of the computer screen. 
+Determine if the goal described in the instruction has been achieved.
+
+Output your judgment in the following JSON format:
+{{
+  "reasoning": "A brief explanation of why you think the task is completed or not.",
+  "success": true/false
+}}
+
+Output ONLY the JSON.
+"""
+        try:
+            # The current_screenshot is already updated at each step
+            response_text, _, _ = self.inferencer.predict_mm(judge_prompt, [self.current_screenshot])
+            
+            # Extract JSON from response
+            match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+                is_success = data.get("success", False)
+                print(f"Judge reasoning: {data.get('reasoning', 'No reasoning provided')}")
+                return 1.0 if is_success else 0.0
+            else:
+                print(f"Failed to parse judge response: {response_text}")
+                return 0.0
+        except Exception as e:
+            print(f"Error during LLM evaluation: {e}")
+            return 0.0
 
 
 
@@ -978,7 +1017,7 @@ class EnvWorker():
         try:
             self.env.unpause()
             # we dont care the env after evaluation, since the reset will destroy it and create new env.
-            return self.env.evaluate()
+            return self.env.evaluate(instruction=self.instruction)
         except Exception as e:
             print(f"Evaluation error: {e}")
             return 0.0

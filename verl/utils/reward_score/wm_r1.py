@@ -46,9 +46,8 @@ def wm_r1_compute_score(
     current_episode: int,
     total_episodes: int,
 ) -> Dict[str, float]:
-    reward = compute_wm_r1_reward(
-        is_success, traj_len, max_steps, avg_len_ref, current_episode, total_episodes
-    )
+    # Binary reward as requested: 1.0 if correct (success), 0.0 otherwise.
+    reward = 1.0 if is_success else 0.0
     return {
         "overall": reward,
         "is_success": float(is_success),

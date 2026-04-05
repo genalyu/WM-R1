@@ -126,20 +126,74 @@ class OSWorldTaskConfigDataset(Dataset):
         data_path: str,
     ):
         self.data_path = data_path
-        with open(data_path, "r") as f:
-            task_configs = json.load(f)
-        
-        self.dataset = []
-        for domain, task_config_list in task_configs.items():
-            for task_config in task_config_list:
-                self.dataset.append((domain, task_config))
+        # Check if it's AgentNet format (either remote HF path or local parquet/jsonl/dir)
+        is_agentnet = data_path.startswith("xlangai/AgentNet") or \
+                      data_path.endswith(".parquet") or \
+                      data_path.endswith(".jsonl") or \
+                      os.path.isdir(data_path) # Assume dir might be local AgentNet
+
+        if is_agentnet:
+            from datasets import load_dataset
+            if "@" in data_path:
+                path, split = data_path.split("@")
+            else:
+                path, split = data_path, "train"
+            
+            if os.path.isdir(path):
+                # Try to load local parquet or jsonl from directory
+                self.dataset = load_dataset("parquet", data_dir=path, split="train")
+            elif path.endswith(".parquet"):
+                self.dataset = load_dataset("parquet", data_files=path, split="train")
+            elif path.endswith(".jsonl"):
+                self.dataset = load_dataset("json", data_files=path, split="train")
+            else:
+                # Remote HF dataset
+                self.dataset = load_dataset(path, split=split)
+            self.mode = "agentnet"
+        else:
+            with open(data_path, "r") as f:
+                task_configs = json.load(f)
+            
+            self.dataset = []
+            for domain, task_config_list in task_configs.items():
+                for task_config in task_config_list:
+                    self.dataset.append((domain, task_config))
+            self.mode = "osworld"
     
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        # if self.offline_data:
-            # return self.getitem_offline(index)
+        if self.mode == "agentnet":
+            row = self.dataset[index]
+            # Map AgentNet columns to task_config
+            # traj[0]['image'] is the initial screenshot, instruction is the task
+            task_config = {
+                "instruction": row.get("instruction", row.get("natural_language_task", "")),
+                "task_id": row.get("task_id", str(index)),
+                "domain": row.get("domain", "agentnet"),
+            }
+            if "traj" in row and len(row["traj"]) > 0:
+                image_val = row["traj"][0].get("image", None)
+                
+                # Handle case where image is a filename (e.g., "uuid.png")
+                if isinstance(image_val, str) and any(image_val.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg"]):
+                    base_dir = self.data_path if os.path.isdir(self.data_path) else os.path.dirname(self.data_path)
+                    
+                    # Try current directory and 'images' subdirectory
+                    paths_to_try = [
+                        os.path.join(base_dir, image_val),
+                        os.path.join(base_dir, "images", image_val)
+                    ]
+                    
+                    for img_path in paths_to_try:
+                        if os.path.exists(img_path):
+                            with open(img_path, "rb") as f:
+                                image_val = f.read()
+                            break
+                
+                task_config["init_screenshot"] = image_val
+            return task_config
 
         domain, task_id = self.dataset[index]
 
