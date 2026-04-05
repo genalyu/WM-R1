@@ -23,8 +23,8 @@ from android_world.agents.wm_utils import MLLMInferencer, render_aligned_png, _p
 
 
 class WorldModelEnv:
-    def __init__(self, model_name="internvl3-78b"):
-        self.inferencer = MLLMInferencer(model_name=model_name)
+    def __init__(self, model_name="internvl3-78b", api_base=None, api_key=None):
+        self.inferencer = MLLMInferencer(model_name=model_name, api_base=api_base, api_key=api_key)
         self.current_screenshot = None
         self.task_config = None
         self.html_save_dir = "wm_htmls"
@@ -630,7 +630,11 @@ class EnvWorker():
         self.model = 'uitars'
         # Always use WorldModelEnv as OSWorld is no longer used.
         print('Start to create world model env.')
-        self.env = WorldModelEnv(model_name=getattr(config.env, "wm_model_name", "internvl3-78b"))
+        self.env = WorldModelEnv(
+            model_name=getattr(config.env, "wm_model_name", "internvl3-78b"),
+            api_base=getattr(config.env, "wm_api_base", None),
+            api_key=getattr(config.env, "wm_api_key", None)
+        )
 
         self.is_init = False
         self.is_done = False

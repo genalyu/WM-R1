@@ -64,9 +64,10 @@ Based on the image and the interaction data above, generate the **HTML for the R
 
 # 定义gpt5请求的类，参考infer.py的实现
 class MLLMInferencer:
-    def __init__(self, model_name="gpt-5", temperature=0.0, max_retry=3):
-        self.openai_api_key = os.environ.get('OPENAI_API_KEY')
-        if not self.openai_api_key:
+    def __init__(self, model_name="gpt-5", temperature=0.0, max_retry=3, api_base=None, api_key=None):
+        self.openai_api_key = api_key or os.environ.get('OPENAI_API_KEY')
+        self.api_base = api_base or 'https://chat.intern-ai.org.cn/api/v1/chat/completions'
+        if not self.openai_api_key and 'intern-ai' not in self.api_base:
             raise RuntimeError('OpenAI API key not set.')
         self.model = model_name
         self.temperature = temperature
@@ -82,9 +83,9 @@ class MLLMInferencer:
         """Send prompt and images to GPT-5 and get response, following the same format as infer.py."""
         headers = {
             'Content-Type': 'application/json',
-            # 'Authorization': f'Bearer {self.openai_api_key}',  
-            'Authorization': f'Bearer sk-LFjq1ToJQrknIHrrohUMA21z7iSsETOyhfUUuko6hJsRozXU', 
         }
+        if self.openai_api_key:
+            headers['Authorization'] = f'Bearer {self.openai_api_key}'
 
         payload = {
             'model': self.model,
@@ -121,8 +122,7 @@ class MLLMInferencer:
             try:
                 # print(f"开始请求{self.model}")
                 response = requests.post(
-                    # 'https://tao.plus7.plus/v1/chat/completions',  # 使用与项目中相同的API端点
-                    'https://chat.intern-ai.org.cn/api/v1/chat/completions',  # 使用与项目中相同的API端点
+                    self.api_base,
                     headers=headers,
                     json=payload,
                 )
