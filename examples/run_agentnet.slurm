@@ -50,6 +50,7 @@ echo "Starting local World Model server..."
 CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
     --served-model-name ${WM_MODEL_NAME} \
     --model ${WM_MODEL_PATH} \
+    --trust-remote-code \
     --limit-mm-per-prompt image=16 \
     --max-model-len 32768 \
     --port 9000 &
