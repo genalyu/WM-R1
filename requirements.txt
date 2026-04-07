@@ -7,3 +7,5 @@ qwen_vl_utils
 swanlab
 tensordict
 torchdata
+transformers
+accelerate
