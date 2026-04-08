@@ -27,16 +27,15 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
 # --- 环境变量修复 ---
 # 解决 Protobuf 版本冲突导致的 Descriptors 报错
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
 SYSTEM_PROMPT="You are a helpful assistant."
 
-# 本地 World Model 配置 (通过 vLLM 启动的本地服务)
+# 本地 World Model 配置 (直接通过 transformers 加载)
 WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
-WM_MODEL_NAME="code2world"
-WM_API_BASE="http://127.0.0.1:9000/v1/chat/completions" # 指向本地 vLLM 端口
-WM_API_KEY="EMPTY" # 本地服务通常不需要 key
 
 # 根据 Slurm 资源自动获取或手动指定
 NUM_GPUS=2
@@ -87,10 +86,7 @@ python3 -m verl.trainer.main \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
-    env.max_steps=15 \
-    env.wm_model_name="${WM_MODEL_NAME}" \
-    env.wm_api_base="${WM_API_BASE}" \
-    env.wm_api_key="${WM_API_KEY}"
+    env.max_steps=15
 
 # --- 5. 清理 ---
 # kill $WM_PID
