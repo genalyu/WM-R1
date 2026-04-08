@@ -4,8 +4,8 @@
 #SBATCH --nodes=1                 # 运行节点数
 #SBATCH --ntasks-per-node=1       # 每个节点的任务数
 #SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
-#SBATCH --cpus-per-task=32        # 每个任务分配的 CPU 核心数
-#SBATCH --mem=256G                # 内存分配
+#SBATCH --cpus-per-task=16        # 每个任务分配的 CPU 核心数
+#SBATCH --mem=128G                # 内存分配
 #SBATCH --output=logs/agentnet_%j.out
 #SBATCH --error=logs/agentnet_%j.err
 
@@ -29,6 +29,10 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+
+# 修复 vLLM 分布式初始化和设备映射
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export VLLM_HOST_IP=$(hostname -I | awk '{print $1}')
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
@@ -83,7 +87,7 @@ python3 -m verl.trainer.main \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
-    worker.rollout.tensor_parallel_size=1 \
+    worker.rollout.tensor_parallel_size=2 \
     worker.rollout.max_num_batched_tokens=81920 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
