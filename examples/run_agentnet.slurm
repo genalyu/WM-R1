@@ -32,7 +32,10 @@ export TRANSFORMERS_OFFLINE=1
 
 # 修复 vLLM 分布式初始化和设备映射
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export VLLM_HOST_IP=$(hostname -I | awk '{print $1}')
+export HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -z "$HOST_IP" ]; then HOST_IP=$(hostname -i); fi
+export VLLM_HOST_IP=$HOST_IP
+export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
 # --- 2. 配置实验参数 ---

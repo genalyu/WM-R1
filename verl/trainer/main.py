@@ -102,7 +102,8 @@ def main():
             "TOKENIZERS_PARALLELISM": "true",
             "NCCL_DEBUG": "WARN",
             "HF_HUB_OFFLINE": "1",
-            "TRANSFORMERS_OFFLINE": "1"
+            "TRANSFORMERS_OFFLINE": "1",
+            "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1"
         }})
     
     print(ray.cluster_resources().keys())

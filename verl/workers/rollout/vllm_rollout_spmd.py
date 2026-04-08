@@ -71,6 +71,8 @@ class vLLMRollout(BaseRollout):
         vllm_init_kwargs = {}
         if config.limit_images > 0:
             vllm_init_kwargs = {"limit_mm_per_prompt": {"image": config.limit_images}}
+        if config.tensor_parallel_size > 1:
+            vllm_init_kwargs["distributed_executor_backend"] = "external_launcher"
 
         self.inference_engine = LLM(
             model=model_path,
@@ -82,7 +84,6 @@ class vLLMRollout(BaseRollout):
             # max_model_len=config.prompt_length + config.response_length,
             # max_num_batched_tokens=config.max_num_batched_tokens,
             enable_sleep_mode=True,
-            distributed_executor_backend="external_launcher",
             disable_custom_all_reduce=True,
             disable_mm_preprocessor_cache=True,
             disable_log_stats=config.disable_log_stats,
