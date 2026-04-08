@@ -131,15 +131,23 @@ class Worker(WorkerHelper):
 
         if "AMD" in torch.cuda.get_device_name():
             os.environ["CUDA_VISIBLE_DEVICES"] = os.getenv("ROCR_VISIBLE_DEVICES")
-            os.environ["LOCAL_RANK"] = os.getenv("RAY_LOCAL_RANK")
+            os.environ["LOCAL_RANK"] = os.getenv("RAY_LOCAL_RANK", "0")
             cuda_visible_devices = os.getenv("LOCAL_RANK", "0")
             torch.cuda.set_device(int(cuda_visible_devices))
+
+        visible_devices = os.getenv("CUDA_VISIBLE_DEVICES", "")
+        visible_device_list = [d for d in visible_devices.split(",") if d.strip() != ""] if visible_devices else []
+        num_visible_devices = len(visible_device_list) if visible_device_list else torch.cuda.device_count()
+        env_local_rank = int(os.getenv("LOCAL_RANK", os.getenv("RAY_LOCAL_RANK", "0")))
+        local_rank = env_local_rank % max(num_visible_devices, 1)
+        os.environ["LOCAL_RANK"] = str(local_rank)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
 
         master_addr = os.getenv("MASTER_ADDR")
         master_port = os.getenv("MASTER_PORT")
 
-        local_world_size = int(os.getenv("LOCAL_WORLD_SIZE", "1"))
-        local_rank = int(os.getenv("LOCAL_RANK", "0"))
+        local_world_size = int(os.getenv("LOCAL_WORLD_SIZE", os.getenv("RAY_LOCAL_WORLD_SIZE", "1")))
 
         store = {
             "_world_size": world_size,
