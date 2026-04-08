@@ -20,12 +20,6 @@ import io
 import os
 import time
 from typing import Any, Optional
-import google.generativeai as genai
-from google.generativeai import types
-from google.generativeai.types import answer_types
-from google.generativeai.types import content_types
-from google.generativeai.types import generation_types
-from google.generativeai.types import safety_types
 import numpy as np
 from PIL import Image
 import requests
@@ -83,22 +77,6 @@ class MultimodalLlmWrapper(abc.ABC):
     Returns:
       Text output and raw output.
     """
-
-
-SAFETY_SETTINGS_BLOCK_NONE = {
-    types.HarmCategory.HARM_CATEGORY_HARASSMENT: (
-        types.HarmBlockThreshold.BLOCK_NONE
-    ),
-    types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: (
-        types.HarmBlockThreshold.BLOCK_NONE
-    ),
-    types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: (
-        types.HarmBlockThreshold.BLOCK_NONE
-    ),
-    types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: (
-        types.HarmBlockThreshold.BLOCK_NONE
-    ),
-}
 
 
 class Gpt4Wrapper(LlmWrapper, MultimodalLlmWrapper):

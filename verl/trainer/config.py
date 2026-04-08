@@ -82,10 +82,14 @@ class TrainerConfig:
     save_limit: int = -1
     save_checkpoint_path: Optional[str] = None
     load_checkpoint_path: Optional[str] = None
+    default_local_dir: Optional[str] = None
 
     def post_init(self):
         if self.save_checkpoint_path is None:
-            self.save_checkpoint_path = os.path.join("checkpoints", self.project_name, self.experiment_name)
+            if self.default_local_dir is not None:
+                self.save_checkpoint_path = self.default_local_dir
+            else:
+                self.save_checkpoint_path = os.path.join("checkpoints", self.project_name, self.experiment_name)
 
 @dataclass
 class EnvConfig:
