@@ -45,28 +45,7 @@ ROLLOUT_N=6
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
-# --- 3. 启动本地 World Model 服务 (vLLM) ---
-echo "Starting local World Model server..."
-CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
-    --served-model-name ${WM_MODEL_NAME} \
-    --model ${WM_MODEL_PATH} \
-    --trust-remote-code \
-    --limit-mm-per-prompt image=16 \
-    --max-model-len 32768 \
-    --port 9000 &
-WM_PID=$!
-
-# 等待服务就绪
-echo "Waiting for World Model server to be ready..."
-for i in {1..30}; do
-    if curl -s http://127.0.0.1:9000/v1/models > /dev/null; then
-        echo "World Model server is READY!"
-        break
-    fi
-    sleep 10
-done
-
-# --- 4. 运行训练命令 (展平所有配置，不依赖 config.yaml) ---
+# --- 3. 运行训练命令 (展平所有配置，不依赖 config.yaml) ---
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
@@ -79,6 +58,9 @@ python3 -m verl.trainer.main \
     trainer.val_before_train=True \
     trainer.val_freq=16 \
     trainer.total_episodes=15 \
+    env.use_wm=True \
+    env.use_local_wm=True \
+    env.wm_model_name="${WM_MODEL_PATH}" \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \

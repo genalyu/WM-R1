@@ -92,6 +92,12 @@ class EnvConfig:
     num_envs: int = 32
     max_steps: int = 15
     screen_size: Tuple[int, int] = (1920, 1080)
+    use_wm: bool = False
+    use_local_wm: bool = True
+    wm_model_name: Optional[str] = None
+    wm_api_base: Optional[str] = None
+    wm_api_key: Optional[str] = None
+    n_wm_max: int = 5
 
 @dataclass
 class PPOConfig:

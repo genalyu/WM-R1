@@ -17,14 +17,20 @@ from qwen_vl_utils import process_vision_info
 # Add Code2World to path to import wm_utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../Code2World'))
 from android_world.agents.wm_utils import MLLMInferencer, render_aligned_png, _post_figure_action
+from android_world.agents.qwen_model import QwenModel
 
 # DesktopEnv is no longer used
 # from desktop_env.desktop_env import DesktopEnv
 
 
 class WorldModelEnv:
-    def __init__(self, model_name="internvl3-78b", api_base=None, api_key=None):
-        self.inferencer = MLLMInferencer(model_name=model_name, api_base=api_base, api_key=api_key)
+    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True):
+        if use_local_transformers:
+            print(f"Loading local Transformers model: {model_name_or_path}")
+            self.inferencer = QwenModel(model_name=model_name_or_path)
+        else:
+            self.inferencer = MLLMInferencer(model_name=model_name_or_path, api_base=api_base, api_key=api_key)
+        
         self.current_screenshot = None
         self.task_config = None
         self.html_save_dir = "wm_htmls"
@@ -33,6 +39,7 @@ class WorldModelEnv:
 
     def reset(self, task_config):
         self.task_config = task_config
+        self.instruction = task_config.get("instruction", "")
         self.current_screenshot = task_config.get("init_screenshot", None)
         if self.current_screenshot is None:
             # Fallback to a blank image if no init_screenshot
@@ -46,19 +53,31 @@ class WorldModelEnv:
 
     def step(self, action_text, pause=0.5):
         self.step_idx += 1
-        html_path = os.path.join(self.html_save_dir, f"step_{self.step_idx}.html")
-        png_path = os.path.join(self.html_save_dir, f"step_{self.step_idx}.png")
         
         # Predict next state using World Model
-        next_state_array = _post_figure_action(
-            inferencer=self.inferencer,
-            image_array=self.current_screenshot,
-            action=action_text,
-            html_save_path=html_path,
-            idx=self.step_idx
-        )
+        if isinstance(self.inferencer, QwenModel):
+            # QwenModel.post handles saving HTML and rendering to PNG internally
+            # We use action_text for both goal and description as a fallback
+            next_state_array = self.inferencer.post(
+                goal=getattr(self, "instruction", action_text),
+                description=action_text,
+                image=Image.fromarray(self.current_screenshot),
+                action=action_text,
+                html_save_path=self.html_save_dir,
+                idx=self.step_idx
+            )
+        else:
+            html_path = os.path.join(self.html_save_dir, f"step_{self.step_idx}") # _post_figure_action appends .html
+            next_state_array = _post_figure_action(
+                inferencer=self.inferencer,
+                image_array=self.current_screenshot,
+                action=action_text,
+                html_save_path=html_path,
+                idx=self.step_idx
+            )
         
-        self.current_screenshot = next_state_array
+        if next_state_array is not None:
+            self.current_screenshot = next_state_array
         
         # In World Model mode, we don't have real rewards or step_done
         # unless we implement a separate evaluator.
@@ -631,9 +650,10 @@ class EnvWorker():
         # Always use WorldModelEnv as OSWorld is no longer used.
         print('Start to create world model env.')
         self.env = WorldModelEnv(
-            model_name=getattr(config.env, "wm_model_name", "internvl3-78b"),
+            model_name_or_path=getattr(config.env, "wm_model_name", "internvl3-78b"),
             api_base=getattr(config.env, "wm_api_base", None),
-            api_key=getattr(config.env, "wm_api_key", None)
+            api_key=getattr(config.env, "wm_api_key", None),
+            use_local_transformers=getattr(config.env, "use_local_wm", True)
         )
 
         self.is_init = False

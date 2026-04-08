@@ -167,3 +167,49 @@ class QwenModel:
         except Exception as e:
             print(f"[Error] Save failed: {e}")
             return False
+
+    def predict_mm(self, user_prompt: str, images: list[np.ndarray]) -> tuple[str, Optional[bool], Any]:
+        """
+        通用的多模态预测方法，兼容 MLLMInferencer 的接口。
+        """
+        # 构建消息
+        content = []
+        for img in images:
+            content.append({"type": "image", "image": img})
+        content.append({"type": "text", "text": user_prompt})
+        
+        messages = [
+            {
+                "role": "user",
+                "content": content,
+            }
+        ]
+        
+        try:
+            inputs = self.processor.apply_chat_template(
+                messages, 
+                add_generation_prompt=True, 
+                tokenize=True, 
+                return_dict=True, 
+                return_tensors="pt"
+            )
+            inputs = inputs.to(self.model.device)
+
+            generated_ids = self.model.generate(**inputs, max_new_tokens=1024)
+            generated_ids_trimmed = [
+                out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            ]
+            
+            output_text = self.processor.batch_decode(
+                generated_ids_trimmed, 
+                skip_special_tokens=True, 
+                clean_up_tokenization_spaces=False
+            )[0]
+            
+            return output_text, True, None
+            
+        except Exception as e:
+            print(f"[Error] predict_mm 失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return "ERROR_CALLING_LLM", False, None
