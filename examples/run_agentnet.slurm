@@ -38,6 +38,7 @@ export VLLM_HOST_IP=$HOST_IP
 export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
+export TORCH_COMPILE_DISABLE=1
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
@@ -88,6 +89,7 @@ python3 -m verl.trainer.main \
     worker.actor.global_batch_size=1 \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
+    worker.actor.use_torch_compile=False \
     worker.rollout.gpu_memory_utilization=0.4 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
