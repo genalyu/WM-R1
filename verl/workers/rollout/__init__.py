@@ -14,7 +14,12 @@
 
 
 from .config import RolloutConfig
-from .vllm_rollout_spmd import vLLMRollout
+from .hf_rollout import HFRollout
+
+try:
+    from .vllm_rollout_spmd import vLLMRollout
+except ImportError:
+    vLLMRollout = None
 
 
-__all__ = ["RolloutConfig", "vLLMRollout"]
+__all__ = ["RolloutConfig", "vLLMRollout", "HFRollout"]

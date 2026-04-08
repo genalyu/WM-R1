@@ -19,6 +19,9 @@ from ...protocol import DataProto
 
 
 class BaseShardingManager:
+    def __init__(self):
+        self.freed_bytes = 0
+
     def __enter__(self):
         pass
 

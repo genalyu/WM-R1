@@ -27,7 +27,13 @@ import torch
 import torch.distributed
 from tensordict import TensorDict
 from transformers import PreTrainedTokenizer
-from vllm import LLM, RequestOutput, SamplingParams
+
+try:
+    from vllm import LLM, RequestOutput, SamplingParams
+except ImportError:
+    LLM = None
+    RequestOutput = None
+    SamplingParams = None
 
 from ...protocol import DataProto
 from ...utils import torch_functional as VF

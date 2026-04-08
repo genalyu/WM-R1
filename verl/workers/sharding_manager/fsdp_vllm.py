@@ -21,8 +21,13 @@ from torch.distributed._tensor import DTensor
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
-from vllm import LLM
-from vllm.distributed import parallel_state as vllm_ps
+
+try:
+    from vllm import LLM
+    from vllm.distributed import parallel_state as vllm_ps
+except ImportError:
+    LLM = None
+    vllm_ps = None
 
 from ...protocol import DataProto, all_gather_data_proto
 from ...utils.model_utils import print_gpu_memory_usage

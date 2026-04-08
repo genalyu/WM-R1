@@ -310,23 +310,42 @@ class FSDPWorker(Worker):
         
 
     def _build_rollout(self) -> None:
+        from .rollout import vLLMRollout, HFRollout
+        from .sharding_manager import FSDPVLLMShardingManager
+
         tp_size = self.config.rollout.tensor_parallel_size
         dp_size = self.world_size // tp_size
         assert self.world_size % tp_size == 0, (
             f"rollout world size: {self.world_size} is not divisible by tp size: {tp_size}"
         )
-        rollout_device_mesh = init_device_mesh("cuda", mesh_shape=(dp_size, tp_size), mesh_dim_names=("dp", "tp"))
-        self.rollout = vLLMRollout(
-            model_path=self.config.actor.model.model_path,
-            config=self.config.rollout,
-            tokenizer=self.tokenizer,
-        )
-        self.rollout_sharding_manager = FSDPVLLMShardingManager(
-            module=self.fsdp_module,
-            inference_engine=self.rollout.inference_engine,
-            device_mesh=rollout_device_mesh,
-        )
-        print_gpu_memory_usage("After vllm init")
+        
+        # Use vLLM if available and not explicitly disabled
+        if vLLMRollout is not None and getattr(self.config.rollout, "name", "vllm") == "vllm":
+            print("Initializing vLLM Rollout...")
+            rollout_device_mesh = init_device_mesh("cuda", mesh_shape=(dp_size, tp_size), mesh_dim_names=("dp", "tp"))
+            self.rollout = vLLMRollout(
+                model_path=self.config.actor.model.model_path,
+                config=self.config.rollout,
+                tokenizer=self.tokenizer,
+            )
+            self.rollout_sharding_manager = FSDPVLLMShardingManager(
+                module=self.fsdp_module,
+                inference_engine=self.rollout.inference_engine,
+                device_mesh=rollout_device_mesh,
+            )
+            print_gpu_memory_usage("After vllm init")
+        else:
+            from .sharding_manager import BaseShardingManager
+            print("Initializing HF Rollout (vLLM is not available or disabled)...")
+            # HFRollout uses the existing FSDP module
+            self.rollout = HFRollout(
+                model=self.fsdp_module,
+                config=self.config.rollout,
+                tokenizer=self.tokenizer,
+            )
+            # No special sharding manager needed for HFRollout as it uses the same module
+            self.rollout_sharding_manager = BaseShardingManager()
+            print_gpu_memory_usage("After HF rollout init")
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
