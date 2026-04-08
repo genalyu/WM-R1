@@ -24,7 +24,7 @@ from android_world.agents.qwen_model import QwenModel
 
 
 class WorldModelEnv:
-    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True):
+    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True, html_save_dir="wm_htmls"):
         if use_local_transformers:
             print(f"Loading local Transformers model: {model_name_or_path}")
             self.inferencer = QwenModel(model_name=model_name_or_path)
@@ -33,7 +33,7 @@ class WorldModelEnv:
         
         self.current_screenshot = None
         self.task_config = None
-        self.html_save_dir = "wm_htmls"
+        self.html_save_dir = html_save_dir
         os.makedirs(self.html_save_dir, exist_ok=True)
         self.step_idx = 0
 
@@ -649,11 +649,17 @@ class EnvWorker():
         self.model = 'uitars'
         # Always use WorldModelEnv as OSWorld is no longer used.
         print('Start to create world model env.')
+        
+        # Determine safe HTML save directory
+        checkpoint_path = getattr(config.trainer, "save_checkpoint_path", "checkpoints")
+        html_save_dir = os.path.join(checkpoint_path, "wm_htmls", f"worker_{worker_idx}")
+        
         self.env = WorldModelEnv(
             model_name_or_path=getattr(config.env, "wm_model_name", "internvl3-78b"),
             api_base=getattr(config.env, "wm_api_base", None),
             api_key=getattr(config.env, "wm_api_key", None),
-            use_local_transformers=getattr(config.env, "use_local_wm", True)
+            use_local_transformers=getattr(config.env, "use_local_wm", True),
+            html_save_dir=html_save_dir
         )
 
         self.is_init = False
