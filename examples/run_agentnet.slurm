@@ -24,7 +24,9 @@ export WANDB_MODE="offline"             # 离线模式，不连接网络
 # 确保在项目根目录
 cd $(dirname $(dirname $(realpath $0)))
 export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
-
+# --- 环境变量修复 ---
+# 解决 Protobuf 版本冲突导致的 Descriptors 报错
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
