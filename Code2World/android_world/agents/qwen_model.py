@@ -3,6 +3,7 @@ import re
 import torch
 import numpy as np
 from PIL import Image
+from typing import Optional, Any, List, Tuple, Union
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from android_world.agents.wm_utils import render_aligned_png
 
