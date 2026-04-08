@@ -307,19 +307,25 @@ class RayPPOTrainer:
         # 1) 从 cluster_resources 里挑出自定义的 IP 资源标签
         #    cluster_resources() 里还会有 "CPU"/"GPU"/"memory" 等内置资源，我们要过滤掉
         all_res = ray.cluster_resources().keys()
-        # ip_labels = [r for r in all_res if re.match(r"^\d+\.\d+\.\d+\.\d+$", r)]
+        # Try different IP label patterns: docker:IP, plain IP, or node:IP
         ip_labels = [r for r in all_res if re.match(r"^docker:\d+\.\d+\.\d+\.\d+$", r)]
         if not ip_labels:
-            raise RuntimeError("没找到任何 IP 资源标签，请检查 ray start 时 --resources 参数")
+            ip_labels = [r for r in all_res if re.match(r"^\d+\.\d+\.\d+\.\d+$", r)]
+        if not ip_labels:
+            ip_labels = [r for r in all_res if re.match(r"^node:\d+\.\d+\.\d+\.\d+$", r)]
+
+        if not ip_labels:
+            print("Warning: No IP resource labels found. EnvWorkers will not be pinned to specific nodes.")
 
         # 2) 按 round-robin 方式，把每个 env worker pin 到不同节点
         self.env_workers = []
         for i in range(num_envs):
-            ip_label = ip_labels[i % len(ip_labels)]
-            w = EnvWorker.options(
-                    resources={ ip_label: 1 },   # 保证这个 actor 一定被调度到拥有 ip_label 资源的节点
-                    name=f"env_worker_{i}"
-                ).remote(i, max_steps, self.config)
+            options = {"name": f"env_worker_{i}"}
+            if ip_labels:
+                ip_label = ip_labels[i % len(ip_labels)]
+                options["resources"] = { ip_label: 1 }   # 保证这个 actor 一定被调度到拥有 ip_label 资源的节点
+            
+            w = EnvWorker.options(**options).remote(i, max_steps, self.config)
             self.env_workers.append(w)
 
         print(f'Env_worker for OSWorld Environment created!  total: {len(self.env_workers)}')
