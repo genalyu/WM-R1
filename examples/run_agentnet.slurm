@@ -81,7 +81,6 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.rollout.gpu_memory_utilization=0.4 \
     worker.rollout.n=$ROLLOUT_N \
-    worker.rollout.name="hf" \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.max_num_batched_tokens=81920 \
