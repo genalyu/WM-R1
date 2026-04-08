@@ -91,4 +91,4 @@ python3 -m verl.trainer.main \
     env.wm_api_key="${WM_API_KEY}"
 
 # --- 5. 清理 ---
-kill $WM_PID
+# kill $WM_PID
