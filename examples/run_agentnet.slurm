@@ -4,8 +4,8 @@
 #SBATCH --nodes=1                 # 运行节点数
 #SBATCH --ntasks-per-node=1       # 每个节点的任务数
 #SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
-#SBATCH --cpus-per-task=16        # 每个任务分配的 CPU 核心数
-#SBATCH --mem=128G                # 内存分配
+#SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
+#SBATCH --mem=300G                # 内存分配
 #SBATCH --output=logs/agentnet_%j.out
 #SBATCH --error=logs/agentnet_%j.err
 
