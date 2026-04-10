@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
 #SBATCH --partition=a100          # 根据你的集群分区名修改
-#SBATCH --nodes=1                 # 运行节点数
-#SBATCH --ntasks-per-node=1       # 每个节点的任务数
+#SBATCH --nodes=2                 # 修改此参数增加节点数
+#SBATCH --ntasks-per-node=1       # 每个节点的任务数 (Ray head/worker)
 #SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
 #SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
 #SBATCH --mem=300G                # 内存分配
@@ -11,34 +11,50 @@
 
 # --- 1. 环境初始化 ---
 source ~/.bashrc
-# 显式加载 Conda (请根据你的 anaconda/miniconda 路径修改)
 source ~/jyy/anaconda/etc/profile.d/conda.sh 
 conda activate 3spo
 
+# --- 启动 Ray 集群 (多节点支持) ---
+# 获取当前计算节点的 IP
+HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
+export HEAD_NODE_IP
+
+# 在当前节点启动 Ray Head
+echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
+ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+    --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
+
+# 在其他节点启动 Ray Worker
+sleep 10
+if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
+    echo "Starting Ray WORKERS on other nodes"
+    srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
+        bash -c 'ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block' &
+fi
+sleep 20
+
 # --- WandB 配置 ---
-export WANDB_PROJECT="wm-r1"   # 你在 WandB 上的项目名称
-export WANDB_MODE="offline"             # 离线模式，不连接网络
-# export WANDB_API_KEY="你的_WANDB_API_KEY" # 离线模式通常不需要 API Key
-# export WANDB_ENTITY="你的_ENTITY"
+export WANDB_PROJECT="wm-r1"
+export WANDB_MODE="offline"
 
 # 确保在项目根目录
 cd $(dirname $(dirname $(realpath $0)))
 export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
+
 # --- 环境变量修复 ---
-# 解决 Protobuf 版本冲突导致的 Descriptors 报错
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 
 # 修复 vLLM 分布式初始化和设备映射
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-if [ -z "$HOST_IP" ]; then HOST_IP=$(hostname -i); fi
-export VLLM_HOST_IP=$HOST_IP
+export VLLM_HOST_IP=$HEAD_NODE_IP
 export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
 export TORCH_COMPILE_DISABLE=1
+export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
+
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
@@ -48,9 +64,10 @@ SYSTEM_PROMPT="You are a helpful assistant."
 WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
 
 # 根据 Slurm 资源自动获取或手动指定
-NUM_GPUS=2
-NUM_ENVS=8
-ROLLOUT_N=6
+NUM_GPUS_PER_NODE=2
+NUM_NODES=$SLURM_JOB_NUM_NODES
+NUM_ENVS=$((8 * NUM_NODES))
+ROLLOUT_N=$((6 * NUM_NODES))
 
 # 数据集路径 (请修改为你的实际路径)
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
@@ -61,8 +78,8 @@ python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
-    trainer.n_gpus_per_node=$NUM_GPUS \
-    trainer.nnodes=1 \
+    trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
+    trainer.nnodes=$NUM_NODES \
     trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/$SLURM_JOB_ID \
     trainer.save_freq=16 \
     trainer.save_limit=3 \
@@ -94,7 +111,7 @@ python3 -m verl.trainer.main \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
-    worker.rollout.tensor_parallel_size=$NUM_GPUS \
+    worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=5000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
@@ -102,4 +119,4 @@ python3 -m verl.trainer.main \
     env.max_steps=15
 
 # --- 5. 清理 ---
-# kill $WM_PID
+ray stop
