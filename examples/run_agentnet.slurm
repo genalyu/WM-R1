@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
 #SBATCH --partition=a100          # 根据你的集群分区名修改
-#SBATCH --nodes=2                 # 修改此参数增加节点数
+#SBATCH --nodes=1                 # 修改此参数增加节点数
 #SBATCH --ntasks-per-node=1       # 每个节点的任务数 (Ray head/worker)
 #SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
 #SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
@@ -66,8 +66,8 @@ WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
 # 根据 Slurm 资源自动获取或手动指定
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
-NUM_ENVS=$((8 * NUM_NODES))
-ROLLOUT_N=$((6 * NUM_NODES))
+NUM_ENVS=$((4 * NUM_NODES))
+ROLLOUT_N=$((3 * NUM_NODES))
 
 # 数据集路径 (请修改为你的实际路径)
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
@@ -112,7 +112,7 @@ python3 -m verl.trainer.main \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
-    worker.rollout.max_num_batched_tokens=5000 \
+    worker.rollout.max_num_batched_tokens=4096 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
