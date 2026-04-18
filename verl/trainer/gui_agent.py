@@ -224,6 +224,49 @@ Output ONLY the JSON.
 
 
 
+uitars_system_prompt_no_think = """You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+You MUST output exactly in this format:
+```
+Action: <a Python function call from the action space>
+```
+
+**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. Do NOT include any Thought, <think>, or </think> tags. Only output the Action line.
+
+## Action Space (use these EXACT function names with proper Python syntax)
+
+click(start_box='<|box_start|>(x1,y1)<|box_end|>')
+left_double(start_box='<|box_start|>(x1,y1)<|box_end|>')
+right_single(start_box='<|box_start|>(x1,y1)<|box_end|>')
+drag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x3,y3)<|box_end|>')
+hotkey(key='')
+type(content='xxx')
+scroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down or up or right or left')
+wait()
+finished(content='xxx')
+
+## Examples of CORRECT output:
+Action: click(start_box='<|box_start|>(50,950)<|box_end|>')
+
+Action: left_double(start_box='<|box_start|>(400,300)<|box_end|>')
+
+Action: type(content='Zhejiang')
+
+Action: finished(content='Task completed successfully')
+
+## Examples of WRONG output (DO NOT do this):
+WRONG: Thought: I need to open the search application.
+WRONG: Action: Click on the search button in the top-right corner.
+WRONG: <think> I should call_wm(action='click') </think>
+
+The Action must ALWAYS be a Python function call, never a sentence.
+
+## User Instruction
+{instruction}
+"""
+
+
 uitars_system_prompt = """You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
 
 ## Output Format
@@ -233,7 +276,7 @@ Thought: <your reasoning in natural English>
 Action: <a Python function call from the action space>
 ```
 
-**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. The Action must be executable Python code.
+**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. The Action must be executable Python code. Do NOT output any <think> or </think> tags.
 
 ## Action Space (use these EXACT function names with proper Python syntax)
 
@@ -765,6 +808,14 @@ class EnvWorker():
 
         self.model = 'uitars'
 
+        # Baseline 和 ablation 模式不需要输出 Thought/<think>，只输出 Action
+        if not self.use_wm or self.n_wm_max == 0:
+            self.system_prompt = uitars_system_prompt_no_think
+            print(f'Using no-think system prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+        else:
+            self.system_prompt = uitars_system_prompt
+            print(f'Using think system prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+
         if self.use_wm:
             print('Start to create world model env.')
             checkpoint_path = getattr(config.trainer, "save_checkpoint_path", "checkpoints")
@@ -1228,10 +1279,10 @@ class EnvWorker():
             step_done = True
             info = {}
 
-        if not is_imaginary:
+        if not is_imaginary or self.env is None:
             if step_done:
                 self.is_done = True
-            
+
             self.step_counter += 1
             if self.step_counter == self.max_steps:
                 self.is_done = True

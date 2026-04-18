@@ -173,6 +173,7 @@ CUDA_VISIBLE_DEVICES=1 python3 -m verl.trainer.main \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
+    worker.rollout.limit_images=16 \
     worker.rollout.max_num_batched_tokens=5120 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
