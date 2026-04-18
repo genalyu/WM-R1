@@ -165,42 +165,54 @@ class OSWorldTaskConfigDataset(Dataset):
 
     def __getitem__(self, index):
         if self.mode == "agentnet":
-            row = self.dataset[index]
-            # Map AgentNet columns to task_config
-            # traj[0]['image'] is the initial screenshot, instruction is the task
-            task_config = {
-                "instruction": row.get("instruction", row.get("natural_language_task", "")),
-                "task_id": row.get("task_id", str(index)),
-                "domain": row.get("domain", "agentnet"),
-            }
-            if "traj" in row and len(row["traj"]) > 0:
-                image_val = row["traj"][0].get("image", None)
-                
-                # Handle case where image is a filename (e.g., "uuid.png")
-                if isinstance(image_val, str) and any(image_val.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg"]):
-                    base_dir = self.data_path if os.path.isdir(self.data_path) else os.path.dirname(self.data_path)
-                    
-                    # Try current directory and 'images' subdirectory
-                    paths_to_try = [
-                        os.path.join(base_dir, image_val),
-                        os.path.join(base_dir, "images", image_val)
-                    ]
-                    
-                    for img_path in paths_to_try:
-                        if os.path.exists(img_path):
-                            with open(img_path, "rb") as f:
-                                image_val = f.read()
-                            break
-                
-                task_config["init_screenshot"] = image_val
-            return task_config
+            # Skip samples with missing images
+            while index < len(self.dataset):
+                row = self.dataset[index]
+                # Map AgentNet columns to task_config
+                # traj[0]['image'] is the initial screenshot, instruction is the task
+                task_config = {
+                    "instruction": row.get("instruction", row.get("natural_language_task", "")),
+                    "task_id": row.get("task_id", str(index)),
+                    "domain": row.get("domain", "agentnet"),
+                }
+                if "traj" in row and len(row["traj"]) > 0:
+                    image_val = row["traj"][0].get("image", None)
+
+                    # Handle case where image is a filename (e.g., "uuid.png")
+                    if isinstance(image_val, str) and any(image_val.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg"]):
+                        base_dir = self.data_path if os.path.isdir(self.data_path) else os.path.dirname(self.data_path)
+
+                        # Try multiple locations: data_dir, data_dir/images/
+                        paths_to_try = [
+                            os.path.join(base_dir, image_val),
+                            os.path.join(base_dir, "images", image_val),
+                        ]
+
+                        found = False
+                        for img_path in paths_to_try:
+                            if os.path.exists(img_path):
+                                with open(img_path, "rb") as f:
+                                    image_val = f.read()
+                                found = True
+                                break
+
+                        if not found:
+                            # Skip this sample, try the next one
+                            index += 1
+                            continue
+
+                    task_config["init_screenshot"] = image_val
+                return task_config
+
+            # All remaining samples have missing images
+            raise IndexError("No valid samples found")
 
         domain, task_id = self.dataset[index]
 
         baes_path = os.path.dirname(self.data_path)
         with open(os.path.join(baes_path, 'examples', domain, task_id + '.json'), "r") as f:
             task_config = json.load(f)
-        
+
         task_config['domain'] = domain
         task_config['id'] = task_id
         task_config["task_id"] = task_id

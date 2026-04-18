@@ -927,14 +927,33 @@ class EnvWorker():
                     'format_reward': 0.0
                 }
 
+            # Convert to PIL Image
             if isinstance(init_screenshot, bytes):
                 init_image = Image.open(BytesIO(init_screenshot))
-                init_screenshot = np.array(init_image)
+            elif isinstance(init_screenshot, str):
+                # base64 encoded image or file path
+                try:
+                    init_image = Image.open(BytesIO(base64.b64decode(init_screenshot)))
+                except Exception:
+                    init_image = Image.open(init_screenshot)
+            elif isinstance(init_screenshot, np.ndarray):
+                init_image = Image.fromarray(init_screenshot)
+            elif isinstance(init_screenshot, Image.Image):
+                init_image = init_screenshot
+            else:
+                self.is_init = True
+                self.is_done = True
+                print(f'Unknown init_screenshot type: {type(init_screenshot)}')
+                return {
+                    "env_idx": self.worker_idx,
+                    "obs_messages": None,
+                    "is_done": self.is_done,
+                    'format_reward': 0.0
+                }
 
-            image_base64 = base64.b64encode(BytesIO(init_screenshot.tobytes())).decode("utf-8")
-            # Re-encode as proper JPEG bytes
+            init_image = init_image.convert('RGB')
             img_bytes = BytesIO()
-            Image.fromarray(init_screenshot).save(img_bytes, format='JPEG')
+            init_image.save(img_bytes, format='JPEG')
             image_base64 = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
             init_messages = [

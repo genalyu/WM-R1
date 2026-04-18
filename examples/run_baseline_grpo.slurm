@@ -33,8 +33,7 @@ export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
 cd $(dirname $(dirname $(realpath $0)))
 PROJECT_DIR=$(pwd)
 export PROJECT_DIR
-mkdir -p /public/home/xlwang/genalyu/WM-R1/wandb
-export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/wandb
+export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1
 
 # --- 启动 Ray 集群 (多节点支持) ---
 # 先清理残留进程

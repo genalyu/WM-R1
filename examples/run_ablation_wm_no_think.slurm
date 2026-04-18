@@ -35,8 +35,7 @@ export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
 cd $(dirname $(dirname $(realpath $0)))
 PROJECT_DIR=$(pwd)
 export PROJECT_DIR
-mkdir -p /public/home/xlwang/genalyu/WM-R1/wandb
-export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/wandb
+export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1
 
 # 每节点启动一个 WM 服务 (独立的 conda env，用 vLLM 推理)
 # 注意: n_wm_max=0 禁用 call_wm 深度思考，但 WM 仍用于 env step 模拟
