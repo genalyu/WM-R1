@@ -90,7 +90,7 @@ SYSTEM_PROMPT="You are a helpful assistant."
 # 根据 Slurm 资源自动获取
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
-NUM_ENVS=$((4 * NUM_NODES))
+NUM_ENVS=$((2 * NUM_NODES))
 ROLLOUT_N=$((3 * NUM_NODES))
 
 # 数据集路径

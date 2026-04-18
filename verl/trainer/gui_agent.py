@@ -621,7 +621,7 @@ from ..utils.tokenizer import get_processor, get_tokenizer
 import verl.utils.torch_functional as VF
 from ..models.transformers.qwen2_vl import get_rope_index
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus=1, num_gpus=0.25)
 class EnvWorker():
     system_prompt = uitars_system_prompt
     
