@@ -928,22 +928,26 @@ class EnvWorker():
                 }
 
             # Convert to PIL Image
-            if isinstance(init_screenshot, bytes):
-                init_image = Image.open(BytesIO(init_screenshot))
-            elif isinstance(init_screenshot, str):
-                # base64 encoded image or file path
-                try:
-                    init_image = Image.open(BytesIO(base64.b64decode(init_screenshot)))
-                except Exception:
-                    init_image = Image.open(init_screenshot)
-            elif isinstance(init_screenshot, np.ndarray):
-                init_image = Image.fromarray(init_screenshot)
-            elif isinstance(init_screenshot, Image.Image):
-                init_image = init_screenshot
-            else:
+            try:
+                if isinstance(init_screenshot, bytes):
+                    init_image = Image.open(BytesIO(init_screenshot))
+                elif isinstance(init_screenshot, str):
+                    # base64 encoded image or file path
+                    try:
+                        init_image = Image.open(BytesIO(base64.b64decode(init_screenshot)))
+                    except Exception:
+                        init_image = Image.open(init_screenshot)
+                elif isinstance(init_screenshot, np.ndarray):
+                    init_image = Image.fromarray(init_screenshot)
+                elif isinstance(init_screenshot, Image.Image):
+                    init_image = init_screenshot
+                else:
+                    raise ValueError(f"Unknown init_screenshot type: {type(init_screenshot)}")
+            except Exception as e:
+                print(f"Failed to load init_screenshot: {e}")
+                print('screenshot load error: ', traceback.format_exc())
                 self.is_init = True
                 self.is_done = True
-                print(f'Unknown init_screenshot type: {type(init_screenshot)}')
                 return {
                     "env_idx": self.worker_idx,
                     "obs_messages": None,
@@ -1027,9 +1031,32 @@ class EnvWorker():
 
 
         init_image = obs["screenshot"]
-        # init_image = Image.open(BytesIO(init_image))
 
-        image_base64 = base64.b64encode(BytesIO(init_image).getvalue()).decode("utf-8")
+        try:
+            # Convert to JPEG bytes for base64 encoding
+            if isinstance(init_image, np.ndarray):
+                if init_image.ndim != 3 or init_image.shape[2] != 3:
+                    raise ValueError(f"Invalid screenshot shape: {init_image.shape}")
+                if init_image.dtype != np.uint8:
+                    raise ValueError(f"Invalid screenshot dtype: {init_image.dtype}")
+                init_pil = Image.fromarray(init_image).convert("RGB")
+            else:
+                init_pil = Image.open(BytesIO(init_image)).convert("RGB")
+
+            img_buf = BytesIO()
+            init_pil.save(img_buf, format="JPEG")
+            image_base64 = base64.b64encode(img_buf.getvalue()).decode("utf-8")
+        except Exception as e:
+            print(f"Failed to process init_screenshot: {e}")
+            print('screenshot error: ', traceback.format_exc())
+            self.is_init = True
+            self.is_done = True
+            return {
+                "env_idx": self.worker_idx,
+                "obs_messages": None,
+                "is_done": self.is_done,
+                'format_reward': 0.0
+            }
 
         init_messages = [
             {

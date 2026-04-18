@@ -439,13 +439,14 @@ class RayPPOTrainer:
             for step_idx in range(self.config.env.max_steps):
                 print(f"Step {step_idx} of {self.config.env.max_steps}: {ray.get([worker.is_done.remote() for worker in self.env_workers])}")
                 num_workers = len(self.env_workers)
+                wg_world_size = self.actor_rollout_wg.world_size
 
                 vllm_batch, valid_env_idx = self.prepare_vllm_inputs_full(env_outputs)
                 if vllm_batch is None:
                     print("No valid env observations, skipping validation batch")
                     break
 
-                vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, num_workers)
+                vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, wg_world_size)
                 
                 gen_batch = vllm_batch_pad.pop(
                     batch_keys=["input_ids", "attention_mask", "position_ids"],
@@ -848,7 +849,7 @@ class RayPPOTrainer:
                             is_done_stats = ray.get([worker.is_done.remote() for worker in self.env_workers])
                             print(f'step_idx: {step_idx}, finished: {sum(is_done_stats)}')
 
-                            num_workers = len(self.actor_rollout_wg._workers)
+                            wg_world_size = self.actor_rollout_wg.world_size
                             with _timer("prepare_vllm_inputs", timing_raw):
                                 vllm_batch, valid_env_idx = self.prepare_vllm_inputs_full(env_outputs)
 
@@ -857,7 +858,7 @@ class RayPPOTrainer:
                                 break
 
                             print('prepare_vllm_inputs_time: ', timing_raw['prepare_vllm_inputs'])
-                            vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, num_workers)
+                            vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, wg_world_size)
 
                             gen_batch = vllm_batch_pad.pop(
                                 batch_keys=["input_ids", "attention_mask", "position_ids"],
