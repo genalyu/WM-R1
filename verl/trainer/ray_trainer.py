@@ -441,6 +441,9 @@ class RayPPOTrainer:
                 num_workers = len(self.env_workers)
 
                 vllm_batch, valid_env_idx = self.prepare_vllm_inputs_full(env_outputs)
+                if vllm_batch is None:
+                    print("No valid env observations, skipping validation batch")
+                    break
 
                 vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, num_workers)
                 
@@ -644,6 +647,9 @@ class RayPPOTrainer:
         valid_obs_messages = [x['obs_messages'] for x in env_outputs if x['obs_messages'] is not None]
         valid_env_idx = [x['env_idx'] for x in env_outputs if x['obs_messages'] is not None]
 
+        if len(valid_obs_messages) == 0:
+            return None, []
+
         dataset = OSWorldDataset(
             valid_obs_messages,
             tokenizer=self.tokenizer,
@@ -845,6 +851,10 @@ class RayPPOTrainer:
                             num_workers = len(self.actor_rollout_wg._workers)
                             with _timer("prepare_vllm_inputs", timing_raw):
                                 vllm_batch, valid_env_idx = self.prepare_vllm_inputs_full(env_outputs)
+
+                            if vllm_batch is None:
+                                print("No valid env observations, skipping step")
+                                break
 
                             print('prepare_vllm_inputs_time: ', timing_raw['prepare_vllm_inputs'])
                             vllm_batch_pad, pad_size = pad_dataproto_to_divisor(vllm_batch, num_workers)
