@@ -227,26 +227,45 @@ Output ONLY the JSON.
 uitars_system_prompt = """You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
 
 ## Output Format
+You MUST output exactly in this format:
 ```
-Thought: ...
-Action: ...
+Thought: <your reasoning in natural English>
+Action: <a Python function call from the action space>
 ```
 
-## Action Space
+**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. The Action must be executable Python code.
+
+## Action Space (use these EXACT function names with proper Python syntax)
 
 click(start_box='<|box_start|>(x1,y1)<|box_end|>')
 left_double(start_box='<|box_start|>(x1,y1)<|box_end|>')
 right_single(start_box='<|box_start|>(x1,y1)<|box_end|>')
 drag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x3,y3)<|box_end|>')
 hotkey(key='')
-type(content='xxx') # Use escape characters \\', \\\", and \\n in content part to ensure we can parse the content in normal python string format. If you want to submit your input, use \\n at the end of content. 
+type(content='xxx')
 scroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down or up or right or left')
-wait() #Sleep for 5s and take a screenshot to check for any changes.
-finished(content='xxx') # Use escape characters \\', \\", and \\n in content part to ensure we can parse the content in normal python string format.
+wait()
+finished(content='xxx')
 
-## Note
-- Use English in `Thought` and `Action` part.
-- Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
+## Examples of CORRECT output:
+Thought: I need to open the search application to find the VLC program. I will click on the search icon in the taskbar.
+Action: click(start_box='<|box_start|>(50,950)<|box_end|>')
+
+Thought: I have found the VLC application icon. I will double-click it to open the program.
+Action: left_double(start_box='<|box_start|>(400,300)<|box_end|>')
+
+Thought: The file menu is open. I will type the file name to search for it.
+Action: type(content='Zhejiang')
+
+Thought: All tasks are completed successfully.
+Action: finished(content='Task completed successfully')
+
+## Examples of WRONG output (DO NOT do this):
+WRONG: Action: Click on the search button in the top-right corner.
+WRONG: Action: I should click on the VLC icon to open it.
+WRONG: Action: Opening the file menu now.
+
+The Action must ALWAYS be a Python function call, never a sentence.
 
 ## User Instruction
 {instruction}
@@ -1189,6 +1208,16 @@ class EnvWorker():
                     obs_screenshot = buffer.getvalue()
             
             format_reward = 0.0
+        except ValueError as e:
+            # Action parsing failed — model output natural language instead of Python
+            print(f'Action parse FAILED (natural language output): {e}')
+            print(f'LLM output snippet: {prediction[:300]}')
+            format_reward = -0.5  # penalty for wrong format
+            actions = ['DONE']  # stop the trajectory
+            obs_screenshot = self.history_images[-1]
+            reward = 0.0
+            step_done = True
+            info = {"parse_failed": True}
         except Exception as e:
             print('Step error: ', prediction)
             print('Error traceback: ', traceback.format_exc())

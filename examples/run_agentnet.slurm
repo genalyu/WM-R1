@@ -1,20 +1,26 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
-#SBATCH --partition=a100          # 根据你的集群分区名修改
-#SBATCH --nodes=2                 # 修改此参数增加节点数
-#SBATCH --ntasks-per-node=1       # 每个节点的任务数 (Ray head/worker)
-#SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
-#SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
-#SBATCH --mem=300G                # 内存分配
+#SBATCH --partition=a100
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=48
+#SBATCH --mem=300G
 #SBATCH --output=logs/agentnet_%j.out
 #SBATCH --error=logs/agentnet_%j.err
+
+# ============================================================
+# GPU 分配策略：
+#   GPU 0 → vLLM WM 服务 (每个节点各起一个)
+#   GPU 1 → 训练 (FSDP + vLLM rollout)
+# ============================================================
 
 # --- 1. 环境初始化 ---
 source ~/.bashrc
 source ~/jyy/anaconda/etc/profile.d/conda.sh
 conda activate 3spo
 
-# --- 全局环境变量 (必须在 Ray 启动前设置) ---
+# --- 全局环境变量 ---
 export WANDB_PROJECT="wm-r1"
 export WANDB_MODE="offline"
 export HF_HUB_OFFLINE=1
@@ -25,22 +31,17 @@ export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
 export TORCH_COMPILE_DISABLE=1
 export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
 
-# 确保在项目根目录
 cd $(dirname $(dirname $(realpath $0)))
 PROJECT_DIR=$(pwd)
 export PROJECT_DIR
 export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/
 
-# 获取当前计算节点的 IP
-HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
-export HEAD_NODE_IP
-export VLLM_HOST_IP=$HEAD_NODE_IP
-
-# 每节点启动一个 WM 服务 (独立的 conda env，用 vLLM + GPU)
+# World Model 配置
+WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
 WM_PORT=18888
-echo "Starting WM vLLM server on $(hostname) port $WM_PORT"
-source ~/jyy/anaconda/etc/profile.d/conda.sh
-# WM 服务用 GPU 0
+
+# --- 每节点启动 vLLM WM 服务 (GPU 0) ---
+echo "Starting WM vLLM server on $(hostname) GPU:0, port $WM_PORT"
 export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
@@ -53,14 +54,18 @@ CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
     --gpu-memory-utilization 0.9 \
     --trust-remote-code &
 sleep 10
-export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
+export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
+echo "WM server URL: $WM_HTTP_URL"
 
-# 在当前节点启动 Ray Head
+HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
+export HEAD_NODE_IP
+export VLLM_HOST_IP=$HEAD_NODE_IP
+
+# 启动 Ray Head
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
 
-# 等待 GCS 就绪 (主动探测，不等死 sleep)
 echo "Waiting for GCS to become available..."
 for i in $(seq 1 60); do
     if ray healthcheck 2>/dev/null; then
@@ -70,10 +75,10 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-# 在其他节点启动 Ray Worker (传递环境变量)
+# 其他节点启动 Ray Worker + WM vLLM 服务
 sleep 5
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
-    echo "Starting Ray WORKERS on other nodes"
+    echo "Starting Ray WORKERS + WM servers on other nodes"
     srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
         bash -c '
             source ~/.bashrc
@@ -87,7 +92,25 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
-            export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+            export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
+
+            # WM vLLM 服务 (GPU 0)
+            WM_PORT=18888
+            echo "Starting WM vLLM server on $(hostname) GPU:0"
+            export CONDA_PREFIX=""
+            eval "$(conda shell.bash hook)"
+            conda activate wm
+            CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+                --model '"$WM_MODEL_PATH"' \
+                --host 0.0.0.0 \
+                --port $WM_PORT \
+                --tensor-parallel-size 1 \
+                --max-model-len 8192 \
+                --gpu-memory-utilization 0.9 \
+                --trust-remote-code &
+            sleep 10
+
+            # Ray Worker
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
             ray start --address=$HEAD_NODE_IP:6379 --num-gpus=2 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
@@ -95,29 +118,24 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     sleep 10
 fi
 
-# --- 2. 配置实验参数 ---
+# --- 2. 配置 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
 SYSTEM_PROMPT="You are a helpful assistant."
 
-# 本地 World Model 配置 (直接通过 transformers 加载)
-WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
-
-# 根据 Slurm 资源自动获取或手动指定
-NUM_GPUS_PER_NODE=2
+NUM_GPUS_PER_NODE=1         # 训练只用 GPU 1
 NUM_NODES=$SLURM_JOB_NUM_NODES
 NUM_ENVS=$((1 * NUM_NODES))
 ROLLOUT_N=$((3 * NUM_NODES))
 
-# 数据集路径 (请修改为你的实际路径)
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
-# --- 3. 运行训练命令 (展平所有配置，不依赖 config.yaml) ---
+# --- 3. 训练 (GPU 1, HTTP 连接 WM) ---
 cd $PROJECT_DIR
 conda activate 3spo
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
-python3 -m verl.trainer.main \
+CUDA_VISIBLE_DEVICES=1 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
@@ -130,8 +148,7 @@ python3 -m verl.trainer.main \
     trainer.val_freq=16 \
     trainer.total_episodes=15 \
     env.use_wm=True \
-    env.use_local_wm=True \
-    env.wm_model_name="${WM_MODEL_PATH}" \
+    env.use_local_wm=False \
     env.wm_http_url="${WM_HTTP_URL}" \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
@@ -155,7 +172,7 @@ python3 -m verl.trainer.main \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
-    worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
+    worker.rollout.tensor_parallel_size=1 \
     worker.rollout.max_num_batched_tokens=5120 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
