@@ -95,6 +95,8 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
             export TORCH_COMPILE_DISABLE=1
             export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
+            export TOKENIZERS_PARALLELISM=false
+            export OMP_NUM_THREADS=4
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
             export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
