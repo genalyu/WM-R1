@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
 #SBATCH --partition=a100          # 根据你的集群分区名修改
-#SBATCH --nodes=2                 # 修改此参数增加节点数
+#SBATCH --nodes=1                 # 修改此参数增加节点数
 #SBATCH --ntasks-per-node=1       # 每个节点的任务数 (Ray head/worker)
 #SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
 #SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
