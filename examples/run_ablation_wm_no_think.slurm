@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1_ablation_wm_no_think
 #SBATCH --partition=a100
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=48
@@ -99,7 +99,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
-            ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
+            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=2 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
         ' &
     sleep 10
 fi
