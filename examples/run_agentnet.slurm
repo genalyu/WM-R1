@@ -92,6 +92,8 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
             export TORCH_COMPILE_DISABLE=1
             export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
+            export TOKENIZERS_PARALLELISM=false
+            export OMP_NUM_THREADS=4
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
             export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
@@ -146,6 +148,10 @@ export NCCL_IB_DISABLE=0
 export NCCL_P2P_DISABLE=0
 export NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=600
+
+# 限制线程数，避免 Ray worker 过多导致资源竞争
+export TOKENIZERS_PARALLELISM=false
+export OMP_NUM_THREADS=4
 
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \

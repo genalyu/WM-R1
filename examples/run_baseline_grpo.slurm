@@ -101,6 +101,11 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 # --- 3. 运行训练命令 (Baseline: env.use_wm=False, algorithm.adv_estimator="grpo") ---
 cd $PROJECT_DIR
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+
+# 限制线程数，避免 Ray worker 过多导致资源竞争
+export TOKENIZERS_PARALLELISM=false
+export OMP_NUM_THREADS=4
+
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-baseline" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \

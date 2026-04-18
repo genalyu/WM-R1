@@ -99,11 +99,12 @@ def main():
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(runtime_env={"env_vars": {
-            "TOKENIZERS_PARALLELISM": "true",
+            "TOKENIZERS_PARALLELISM": "false",
             "NCCL_DEBUG": "WARN",
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
             "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
+            "OMP_NUM_THREADS": "4",
         }})
     
     print(ray.cluster_resources().keys())
