@@ -141,7 +141,12 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 cd $PROJECT_DIR
 conda activate 3spo
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
-CUDA_VISIBLE_DEVICES=1 python3 -m verl.trainer.main \
+
+# 限制线程数，避免 Ray worker 过多导致资源竞争
+export TOKENIZERS_PARALLELISM=false
+export OMP_NUM_THREADS=4
+
+python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-ablation" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
