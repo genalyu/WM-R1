@@ -62,11 +62,13 @@ HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
-# 启动 Ray Head
+# 启动 Ray Head (GPU 1 only, GPU 0 is for WM vLLM)
 ray stop --force 2>/dev/null || true
 rm -rf /tmp/ray
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
+export CUDA_VISIBLE_DEVICES=1
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+    --num-gpus=1 \
     --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
 
 echo "Waiting for GCS to become available..."
@@ -113,10 +115,11 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 --trust-remote-code &
             sleep 10
 
-            # Ray Worker
+            # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
-            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=2 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
+            export CUDA_VISIBLE_DEVICES=1
+            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
         ' &
     sleep 10
 fi

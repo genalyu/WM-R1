@@ -104,7 +104,6 @@ def main():
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
             "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
-            "CUDA_VISIBLE_DEVICES": "1",  # Force all workers to use GPU 1
         }})
     
     print(ray.cluster_resources().keys())
