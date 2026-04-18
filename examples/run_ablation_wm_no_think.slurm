@@ -37,6 +37,11 @@ PROJECT_DIR=$(pwd)
 export PROJECT_DIR
 
 # --- 启动 Ray 集群 (多节点支持) ---
+
+# 先清理残留进程
+ray stop --force 2>/dev/null || true
+rm -rf /tmp/ray
+
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
@@ -45,8 +50,19 @@ echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
 
+# 等待 GCS 就绪 (主动探测，不等死 sleep)
+echo "Waiting for GCS to become available..."
+for i in $(seq 1 60); do
+    if ray healthcheck 2>/dev/null; then
+        echo "GCS ready after ${i}s"
+        break
+    fi
+    sleep 1
+done
+
 # 在其他节点启动 Ray Worker (传递环境变量)
-sleep 10
+sleep 5
+
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS on other nodes"
     srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
@@ -63,10 +79,12 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+            ray stop --force 2>/dev/null || true
+            rm -rf /tmp/ray
             ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
         ' &
+    sleep 10
 fi
-sleep 20
 
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="ablation_wm_no_think"
