@@ -139,7 +139,7 @@ python3 -m verl.trainer.main \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
-    worker.rollout.max_num_batched_tokens=4096 \
+    worker.rollout.max_num_batched_tokens=5120 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
