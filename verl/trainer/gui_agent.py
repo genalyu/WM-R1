@@ -144,10 +144,10 @@ class WorldModelEnv:
         self.step_idx += 1
 
         # Predict next state using World Model
-        # Only use local transformers for QwenModel (wm conda env)
-        # HTTP mode uses QwenHTTPClient which doesn't need transformers
-        if self.inferencer.__class__.__name__ == "QwenModel":
-            # QwenModel.post handles saving HTML and rendering to PNG internally
+        inferencer_type = self.inferencer.__class__.__name__
+
+        if inferencer_type in ("QwenModel", "QwenHTTPClient"):
+            # Both QwenModel and QwenHTTPClient have the same .post() signature
             next_state_array = self.inferencer.post(
                 goal=getattr(self, "instruction", action_text),
                 description=action_text,
@@ -157,7 +157,8 @@ class WorldModelEnv:
                 idx=self.step_idx
             )
         else:
-            html_path = os.path.join(self.html_save_dir, f"step_{self.step_idx}") # _post_figure_action appends .html
+            # MLLMInferencer uses predict_mm via _post_figure_action
+            html_path = os.path.join(self.html_save_dir, f"step_{self.step_idx}")
             next_state_array = _post_figure_action(
                 inferencer=self.inferencer,
                 image_array=self.current_screenshot,
