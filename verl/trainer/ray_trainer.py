@@ -730,7 +730,8 @@ class RayPPOTrainer:
         rollout_n = self.config.worker.rollout.n
 
         task_configs = [x for x in batch_dict for _ in range(rollout_n)] # interleave
-        assert len(task_configs) == len(self.env_workers)
+        print(f"start_reset_envs: batch_size={len(batch_dict)}, rollout_n={rollout_n}, task_configs={len(task_configs)}, env_workers={len(self.env_workers)}")
+        assert len(task_configs) == len(self.env_workers), f"task_configs ({len(task_configs)}) != env_workers ({len(self.env_workers)})"
         reset_envs_object = [worker.reset.remote(task_config) for worker, task_config in zip(self.env_workers, task_configs)]
         return task_configs, reset_envs_object
     
