@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=wm_r1_baseline_grpo
+#SBATCH --job-name=wm_r1_baseline
 #SBATCH --partition=a100
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
@@ -34,6 +34,10 @@ cd $(dirname $(dirname $(realpath $0)))
 PROJECT_DIR=$(pwd)
 export PROJECT_DIR
 
+# --- 启动 Ray 集群 (多节点支持) ---
+# 先清理残留进程
+ray stop --force 2>/dev/null || true
+rm -rf /tmp/ray
 # --- 启动 Ray 集群 (多节点支持) ---
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
