@@ -621,7 +621,7 @@ from ..utils.tokenizer import get_processor, get_tokenizer
 import verl.utils.torch_functional as VF
 from ..models.transformers.qwen2_vl import get_rope_index
 
-@ray.remote(num_cpus=1, num_gpus=0.25)
+@ray.remote(num_cpus=1)
 class EnvWorker():
     system_prompt = uitars_system_prompt
     
@@ -634,6 +634,14 @@ class EnvWorker():
         self.use_wm = getattr(config.env, "use_wm", False)
         self.n_wm = 0
         self.n_wm_max = getattr(config.env, "n_wm_max", 5)
+
+        # 手动分配 GPU：worker 按 round-robin 分到不同 GPU
+        # worker 0→GPU 0, worker 1→GPU 1, worker 2→GPU 0, ...
+        if self.use_wm:
+            gpus_per_node = self.config.trainer.n_gpus_per_node
+            local_gpu_idx = worker_idx % gpus_per_node
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(local_gpu_idx)
+            print(f"EnvWorker {worker_idx} set CUDA_VISIBLE_DEVICES={local_gpu_idx}")
 
         self.tokenizer = get_tokenizer(
             config.worker.actor.model.model_path,
