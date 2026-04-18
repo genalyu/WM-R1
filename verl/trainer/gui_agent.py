@@ -647,20 +647,21 @@ class EnvWorker():
         )
 
         self.model = 'uitars'
-        # Always use WorldModelEnv as OSWorld is no longer used.
-        print('Start to create world model env.')
-        
-        # Determine safe HTML save directory
-        checkpoint_path = getattr(config.trainer, "save_checkpoint_path", "checkpoints")
-        html_save_dir = os.path.join(checkpoint_path, "wm_htmls", f"worker_{worker_idx}")
-        
-        self.env = WorldModelEnv(
-            model_name_or_path=getattr(config.env, "wm_model_name", "internvl3-78b"),
-            api_base=getattr(config.env, "wm_api_base", None),
-            api_key=getattr(config.env, "wm_api_key", None),
-            use_local_transformers=getattr(config.env, "use_local_wm", True),
-            html_save_dir=html_save_dir
-        )
+
+        if self.use_wm:
+            print('Start to create world model env.')
+            checkpoint_path = getattr(config.trainer, "save_checkpoint_path", "checkpoints")
+            html_save_dir = os.path.join(checkpoint_path, "wm_htmls", f"worker_{worker_idx}")
+            self.env = WorldModelEnv(
+                model_name_or_path=getattr(config.env, "wm_model_name", "internvl3-78b"),
+                api_base=getattr(config.env, "wm_api_base", None),
+                api_key=getattr(config.env, "wm_api_key", None),
+                use_local_transformers=getattr(config.env, "use_local_wm", True),
+                html_save_dir=html_save_dir
+            )
+        else:
+            print('Baseline mode: no world model.')
+            self.env = None
 
         self.is_init = False
         self.is_done = False
@@ -878,8 +879,9 @@ class EnvWorker():
 
         self.process_message(init_messages)
 
-        # since the prediction time can be very long for multienv, we pause the env to avoid automatically locking screen. 
-        self.env.pause()
+        # since the prediction time can be very long for multienv, we pause the env to avoid automatically locking screen.
+        if self.env is not None:
+            self.env.pause()
         return {
             'env_idx': self.worker_idx,
             'obs_messages': self.history_messages,
@@ -953,6 +955,12 @@ class EnvWorker():
                 reward = 0.0
                 step_done = (actions[0] != 'WAIT')
                 obs_screenshot = self.history_images[-1]
+            elif self.env is None:
+                # Baseline mode: no world model, skip simulation
+                # The model generates complete trajectory in one response
+                reward = 0.0
+                step_done = True  # Mark as done after one step
+                obs_screenshot = self.history_images[-1]
             else:
                 # Execute simulation in WorldModelEnv
                 obs, reward, step_done, _ = self.env.step(action_desc)
@@ -983,7 +991,8 @@ class EnvWorker():
             if self.step_counter == self.max_steps:
                 self.is_done = True
 
-        self.env.pause()
+        if self.env is not None:
+            self.env.pause()
 
         self.history_images.append(obs_screenshot)
         self.history_messages.append({
@@ -1047,6 +1056,9 @@ class EnvWorker():
             
     
     def evaluate(self):
+        if self.env is None:
+            # Baseline mode: no world model for evaluation
+            return 0.0
         try:
             self.env.unpause()
             # we dont care the env after evaluation, since the reset will destroy it and create new env.
