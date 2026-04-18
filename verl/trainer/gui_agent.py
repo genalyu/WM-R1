@@ -23,9 +23,70 @@ from android_world.agents.qwen_model import QwenModel
 # from desktop_env.desktop_env import DesktopEnv
 
 
+class QwenHTTPClient:
+    """HTTP client for the World Model server running in a separate conda env."""
+
+    def __init__(self, base_url="http://127.0.0.1:18888", html_save_dir="/tmp/wm_htmls"):
+        import urllib.request
+        self.base_url = base_url
+        self.html_save_dir = html_save_dir
+        self._urlopen = urllib.request.urlopen
+        # Verify server is reachable
+        try:
+            self._urlopen(f"{base_url}/health", timeout=5)
+            print(f"WM server connected: {base_url}")
+        except Exception:
+            print(f"WM server not reachable at {base_url}, will use direct calls")
+            self.connected = False
+            return
+        self.connected = True
+
+    def post(self, goal, description, image, action, html_save_path=None, idx=0):
+        """Call WM server to predict next state from (screenshot + action)."""
+        import base64
+        import io
+        import json
+        import urllib.request
+
+        # Encode image to base64
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        payload = json.dumps({
+            "image_b64": image_b64,
+            "goal": goal,
+            "description": description,
+            "action": action,
+            "html_dir": html_save_path or self.html_save_dir,
+            "idx": idx,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{self.base_url}/predict",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        resp = self._urlopen(req, timeout=300)
+        result = json.loads(resp.read())
+
+        if "error" in result:
+            print(f"WM server error: {result['error']}")
+            return None
+
+        # Decode PNG
+        import numpy as np
+        png_bytes = base64.b64decode(result["png_b64"])
+        with Image.open(io.BytesIO(png_bytes)) as img:
+            return np.array(img.convert("RGB"))
+
+
 class WorldModelEnv:
-    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True, wm_device_map="auto", html_save_dir="wm_htmls"):
-        if use_local_transformers:
+    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True, wm_device_map="auto", wm_http_url=None, html_save_dir="wm_htmls"):
+        if wm_http_url:
+            print(f"Using WM HTTP server: {wm_http_url}")
+            self.inferencer = QwenHTTPClient(base_url=wm_http_url, html_save_dir=html_save_dir)
+        elif use_local_transformers:
             print(f"Loading local Transformers model: {model_name_or_path}, device_map={wm_device_map}")
             self.inferencer = QwenModel(model_name=model_name_or_path, device_map=wm_device_map)
         else:
@@ -660,12 +721,14 @@ class EnvWorker():
             print('Start to create world model env.')
             checkpoint_path = getattr(config.trainer, "save_checkpoint_path", "checkpoints")
             html_save_dir = os.path.join(checkpoint_path, "wm_htmls", f"worker_{worker_idx}")
+            wm_http_url = getattr(config.env, "wm_http_url", None)
             self.env = WorldModelEnv(
                 model_name_or_path=getattr(config.env, "wm_model_name", "internvl3-78b"),
                 api_base=getattr(config.env, "wm_api_base", None),
                 api_key=getattr(config.env, "wm_api_key", None),
-                use_local_transformers=getattr(config.env, "use_local_wm", True),
+                use_local_transformers=getattr(config.env, "use_local_wm", True) and not wm_http_url,
                 wm_device_map=getattr(config.env, "wm_device_map", "auto"),
+                wm_http_url=wm_http_url,
                 html_save_dir=html_save_dir
             )
         else:

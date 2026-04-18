@@ -38,6 +38,17 @@ export PROJECT_DIR
 mkdir -p $PROJECT_DIR/wandb
 export WANDB_DIR=$PROJECT_DIR/wandb
 
+# 每节点启动一个 WM 服务 (独立的 conda env)
+WM_PORT=18889
+WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
+echo "Starting WM server on $(hostname) port $WM_PORT"
+source ~/jyy/anaconda/etc/profile.d/conda.sh
+conda run -n wm --no-capture-output \
+    python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
+    --model "$WM_MODEL_PATH" --port $WM_PORT --device "cpu" &
+sleep 5
+export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
+
 # --- 启动 Ray 集群 (多节点支持) ---
 
 # 先清理残留进程
@@ -124,7 +135,7 @@ python3 -m verl.trainer.main \
     env.use_wm=True \
     env.use_local_wm=True \
     env.wm_model_name="${WM_MODEL_PATH}" \
-    env.wm_device_map="cpu" \
+    env.wm_http_url="${WM_HTTP_URL}" \
     env.n_wm_max=0 \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \

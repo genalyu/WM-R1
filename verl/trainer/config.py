@@ -102,6 +102,7 @@ class EnvConfig:
     wm_api_base: Optional[str] = None
     wm_api_key: Optional[str] = None
     wm_device_map: str = "auto"
+    wm_http_url: Optional[str] = None
     n_wm_max: int = 5
 
 @dataclass
