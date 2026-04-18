@@ -90,7 +90,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
-            ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
+            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=2 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
         ' &
     sleep 10
 fi
