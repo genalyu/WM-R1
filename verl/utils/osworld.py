@@ -209,6 +209,27 @@ class OSWorldTaskConfigDataset(Dataset):
                             continue
 
                     task_config["init_screenshot"] = image_val
+                else:
+                    # No traj data, skip
+                    index += 1
+                    continue
+
+                # Validate init_screenshot is a valid image if it's bytes or dict
+                if "init_screenshot" in task_config:
+                    img_bytes = None
+                    if isinstance(task_config["init_screenshot"], bytes):
+                        img_bytes = task_config["init_screenshot"]
+                    elif isinstance(task_config["init_screenshot"], dict) and "bytes" in task_config["init_screenshot"]:
+                        img_bytes = task_config["init_screenshot"]["bytes"]
+
+                    if img_bytes is not None:
+                        try:
+                            Image.open(BytesIO(img_bytes)).verify()
+                        except Exception:
+                            # Corrupted image bytes, skip this sample
+                            index += 1
+                            continue
+
                 return task_config
 
             # All remaining samples have missing images
