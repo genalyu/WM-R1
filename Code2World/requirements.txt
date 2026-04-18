@@ -100,7 +100,7 @@ portpicker
 prometheus_client
 propcache
 proto-plus
-protobuf
+protobuf>=4.21
 py-spy
 pyarrow
 pyasn1

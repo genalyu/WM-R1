@@ -11,48 +11,58 @@
 
 # --- 1. 环境初始化 ---
 source ~/.bashrc
-source ~/jyy/anaconda/etc/profile.d/conda.sh 
+source ~/jyy/anaconda/etc/profile.d/conda.sh
 conda activate 3spo
+
+# --- 全局环境变量 (必须在 Ray 启动前设置) ---
+export WANDB_PROJECT="wm-r1"
+export WANDB_MODE="offline"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export VLLM_ATTENTION_BACKEND=XFORMERS
+export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
+export TORCH_COMPILE_DISABLE=1
+export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
+
+# 确保在项目根目录
+cd $(dirname $(dirname $(realpath $0)))
+PROJECT_DIR=$(pwd)
+export PROJECT_DIR
 
 # --- 启动 Ray 集群 (多节点支持) ---
 # 获取当前计算节点的 IP
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
+export VLLM_HOST_IP=$HEAD_NODE_IP
 
 # 在当前节点启动 Ray Head
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
 
-# 在其他节点启动 Ray Worker
+# 在其他节点启动 Ray Worker (传递环境变量)
 sleep 10
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS on other nodes"
     srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
-        bash -c 'ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block' &
+        bash -c '
+            source ~/.bashrc
+            source ~/jyy/anaconda/etc/profile.d/conda.sh
+            conda activate 3spo
+            export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+            export CUDA_DEVICE_ORDER=PCI_BUS_ID
+            export VLLM_ATTENTION_BACKEND=XFORMERS
+            export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
+            export TORCH_COMPILE_DISABLE=1
+            export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
+            export HEAD_NODE_IP='"$HEAD_NODE_IP"'
+            export VLLM_HOST_IP=$HEAD_NODE_IP
+            export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+            ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
+        ' &
 fi
 sleep 20
-
-# --- WandB 配置 ---
-export WANDB_PROJECT="wm-r1"
-export WANDB_MODE="offline"
-
-# 确保在项目根目录
-cd $(dirname $(dirname $(realpath $0)))
-export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
-
-# --- 环境变量修复 ---
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
-
-# 修复 vLLM 分布式初始化和设备映射
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export VLLM_HOST_IP=$HEAD_NODE_IP
-export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
-export VLLM_ATTENTION_BACKEND=XFORMERS
-export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
-export TORCH_COMPILE_DISABLE=1
-export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
 
 # --- 2. 配置实验参数 ---
 EXPERIMENT_NAME="wm_r1"
@@ -73,6 +83,8 @@ TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.json
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
 # --- 3. 运行训练命令 (展平所有配置，不依赖 config.yaml) ---
+cd $PROJECT_DIR
+export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
