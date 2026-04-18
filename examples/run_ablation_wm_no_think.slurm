@@ -125,6 +125,7 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
 # --- 3. 运行训练命令 (Ablation: use_wm=True 但禁用 call_wm 深度思考) ---
 cd $PROJECT_DIR
+conda activate 3spo
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-ablation" \
