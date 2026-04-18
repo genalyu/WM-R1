@@ -1,13 +1,17 @@
 #!/bin/bash
-#SBATCH --job-name=wm_r1
-#SBATCH --partition=a100          # 根据你的集群分区名修改
-#SBATCH --nodes=1                 # 修改此参数增加节点数
-#SBATCH --ntasks-per-node=1       # 每个节点的任务数 (Ray head/worker)
-#SBATCH --gres=gpu:2              # 每个节点使用的 GPU 数量
-#SBATCH --cpus-per-task=48        # 每个任务分配的 CPU 核心数
-#SBATCH --mem=300G                # 内存分配
-#SBATCH --output=logs/agentnet_%j.out
-#SBATCH --error=logs/agentnet_%j.err
+#SBATCH --job-name=wm_r1_baseline_grpo
+#SBATCH --partition=a100
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=48
+#SBATCH --mem=300G
+#SBATCH --output=logs/baseline_grpo_%j.out
+#SBATCH --error=logs/baseline_grpo_%j.err
+
+# ============================================================
+# Baseline: Pure GRPO — 直接生成完整轨迹，不使用世界模型
+# ============================================================
 
 # --- 1. 环境初始化 ---
 source ~/.bashrc
@@ -31,12 +35,10 @@ PROJECT_DIR=$(pwd)
 export PROJECT_DIR
 
 # --- 启动 Ray 集群 (多节点支持) ---
-# 获取当前计算节点的 IP
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
-# 在当前节点启动 Ray Head
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
@@ -65,41 +67,36 @@ fi
 sleep 20
 
 # --- 2. 配置实验参数 ---
-EXPERIMENT_NAME="wm_r1"
+EXPERIMENT_NAME="baseline_grpo"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
 SYSTEM_PROMPT="You are a helpful assistant."
 
-# 本地 World Model 配置 (直接通过 transformers 加载)
-WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
-
-# 根据 Slurm 资源自动获取或手动指定
+# 根据 Slurm 资源自动获取
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
 NUM_ENVS=$((4 * NUM_NODES))
 ROLLOUT_N=$((3 * NUM_NODES))
 
-# 数据集路径 (请修改为你的实际路径)
+# 数据集路径
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
-# --- 3. 运行训练命令 (展平所有配置，不依赖 config.yaml) ---
+# --- 3. 运行训练命令 (Baseline: env.use_wm=False, algorithm.adv_estimator="grpo") ---
 cd $PROJECT_DIR
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 python3 -m verl.trainer.main \
-    trainer.project_name="wm-r1-agentnet" \
+    trainer.project_name="wm-r1-baseline" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
     trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
     trainer.nnodes=$NUM_NODES \
-    trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/$SLURM_JOB_ID \
+    trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/baseline_grpo/$SLURM_JOB_ID \
     trainer.save_freq=16 \
     trainer.save_limit=3 \
     trainer.val_before_train=True \
     trainer.val_freq=16 \
     trainer.total_episodes=15 \
-    env.use_wm=True \
-    env.use_local_wm=True \
-    env.wm_model_name="${WM_MODEL_PATH}" \
+    env.use_wm=False \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
@@ -124,7 +121,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=4096 \
-    algorithm.adv_estimator="wm_r1" \
+    algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15

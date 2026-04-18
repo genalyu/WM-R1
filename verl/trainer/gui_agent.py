@@ -892,7 +892,10 @@ class EnvWorker():
         
         # Check if the prediction contains a World Model interaction inside <think>
         # Format: <think> ... call_wm(action='...') ... </think>
-        wm_call_match = re.search(r"<think>.*?call_wm\(action='(.*?)'\).*?</think>", prediction, re.DOTALL)
+        # Skip this check if n_wm_max is 0 (ablation: no WM deep thinking)
+        wm_call_match = None
+        if self.n_wm_max > 0:
+            wm_call_match = re.search(r"<think>.*?call_wm\(action='(.*?)'\).*?</think>", prediction, re.DOTALL)
         
         is_imaginary = False
         if wm_call_match:

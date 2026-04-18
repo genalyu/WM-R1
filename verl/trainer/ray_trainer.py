@@ -57,6 +57,8 @@ from .metrics import compute_data_metrics, compute_throughout_metrics, compute_t
 from ..utils.reward_score.wm_r1 import compute_wm_r1_reward
 from .gui_agent import EnvWorker
 from .replay_buffer import ReplayBuffer
+from .baseline_grpo_worker import BaselineEnvWorker
+from .ablation_no_think_worker import AblationNoThinkWorker
 
 from collections import defaultdict
 from qwen_vl_utils import process_vision_info
@@ -319,13 +321,19 @@ class RayPPOTrainer:
 
         # 2) 按 round-robin 方式，把每个 env worker pin 到不同节点
         self.env_workers = []
+        if not self.config.env.use_wm:
+            worker_cls = BaselineEnvWorker  # Pure GRPO: no world model at all
+        elif getattr(self.config.env, "n_wm_max", 5) == 0:
+            worker_cls = AblationNoThinkWorker  # WM for state prediction only, no deep thinking
+        else:
+            worker_cls = EnvWorker  # Full WM-R1: WM with deep thinking
         for i in range(num_envs):
             options = {"name": f"env_worker_{i}"}
             if ip_labels:
                 ip_label = ip_labels[i % len(ip_labels)]
                 options["resources"] = { ip_label: 1 }   # 保证这个 actor 一定被调度到拥有 ip_label 资源的节点
-            
-            w = EnvWorker.options(**options).remote(i, max_steps, self.config)
+
+            w = worker_cls.options(**options).remote(i, max_steps, self.config)
             self.env_workers.append(w)
 
         print(f'Env_worker for OSWorld Environment created!  total: {len(self.env_workers)}')
