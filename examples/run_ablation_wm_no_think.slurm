@@ -131,8 +131,8 @@ SYSTEM_PROMPT="You are a helpful assistant."
 
 NUM_GPUS_PER_NODE=1
 NUM_NODES=$SLURM_JOB_NUM_NODES
-NUM_ENVS=$((1 * NUM_NODES))
 ROLLOUT_N=$((3 * NUM_NODES))
+NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rollout_n
 
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
