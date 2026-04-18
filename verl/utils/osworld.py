@@ -192,9 +192,16 @@ class OSWorldTaskConfigDataset(Dataset):
                         for img_path in paths_to_try:
                             if os.path.exists(img_path):
                                 with open(img_path, "rb") as f:
-                                    image_val = f.read()
-                                found = True
-                                break
+                                    image_bytes = f.read()
+                                # Verify the file is a valid image
+                                try:
+                                    Image.open(BytesIO(image_bytes)).verify()
+                                    image_val = image_bytes
+                                    found = True
+                                    break
+                                except Exception:
+                                    # Corrupted file, try next location
+                                    continue
 
                         if not found:
                             # Skip this sample, try the next one
