@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=48
-#SBATCH --mem=380G
+#SBATCH --mem=330G
 #SBATCH --output=logs/baseline_grpo_%j.out
 #SBATCH --error=logs/baseline_grpo_%j.err
 
