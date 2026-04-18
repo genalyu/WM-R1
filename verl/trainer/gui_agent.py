@@ -1251,12 +1251,24 @@ class EnvWorker():
                 # Execute simulation in WorldModelEnv
                 obs, reward, step_done, _ = self.env.step(action_desc)
                 obs_screenshot = obs['screenshot']
-                
-                # Convert back to bytes for consistency if it's a numpy array
+                print(f"WM screenshot type: {type(obs_screenshot)}, shape/len: {getattr(obs_screenshot, 'shape', len(obs_screenshot) if obs_screenshot else 0)}")
+                # Convert to valid JPEG bytes
                 if isinstance(obs_screenshot, np.ndarray):
+                    if obs_screenshot.ndim != 3 or obs_screenshot.shape[2] != 3:
+                        raise ValueError(f"Invalid WM screenshot shape: {obs_screenshot.shape}")
+                    if obs_screenshot.dtype != np.uint8:
+                        obs_screenshot = obs_screenshot.astype(np.uint8)
                     buffer = BytesIO()
                     Image.fromarray(obs_screenshot).save(buffer, format="JPEG")
                     obs_screenshot = buffer.getvalue()
+                elif isinstance(obs_screenshot, bytes):
+                    # Validate it's a real image
+                    try:
+                        Image.open(BytesIO(obs_screenshot)).verify()
+                    except Exception:
+                        raise ValueError("WM returned invalid screenshot bytes")
+                else:
+                    raise ValueError(f"WM screenshot has unexpected type: {type(obs_screenshot)}")
             
             format_reward = 0.0
         except ValueError as e:
