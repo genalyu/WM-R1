@@ -135,7 +135,16 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 cd $PROJECT_DIR
 conda activate 3spo
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
-CUDA_VISIBLE_DEVICES=1 python3 -m verl.trainer.main \
+
+# NCCL 跨节点通信配置
+export NCCL_DEBUG=INFO
+export NCCL_SOCKET_IFNAME=eth0,ib0,eno,ens,enp
+export NCCL_IB_DISABLE=0
+export NCCL_P2P_DISABLE=0
+export NCCL_BLOCKING_WAIT=1
+export NCCL_TIMEOUT=600
+
+python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
