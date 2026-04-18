@@ -17,67 +17,94 @@ from qwen_vl_utils import process_vision_info
 # Add Code2World to path to import wm_utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../Code2World'))
 from android_world.agents.wm_utils import MLLMInferencer, render_aligned_png, _post_figure_action
-from android_world.agents.qwen_model import QwenModel
 
 # DesktopEnv is no longer used
 # from desktop_env.desktop_env import DesktopEnv
 
 
 class QwenHTTPClient:
-    """HTTP client for the World Model server running in a separate conda env."""
+    """HTTP client for the World Model vLLM server running in a separate conda env."""
+
+    SYSTEM_PROMPT = """You are an expert **UI State Transition Simulator** and **Frontend Developer**.
+Your task is to predict the **NEXT UI STATE** based on a screenshot of the current state and a user interaction.
+
+### Rules
+- Analyze the action. If the user clicks a button, show the result.
+- Output ONLY raw HTML. Start with `<!DOCTYPE html>` and end with `</html>`.
+- All visible content MUST be wrapped in `<div id="render-target"> ... </div>`
+  with `width: 1080px; height: 2400px; position: relative; overflow: hidden;`.
+- The `<body>` tag must have `margin: 0; padding: 0; background: transparent;`.
+"""
+
+    USER_PROMPT = "<image>\n### INPUT CONTEXT\n1. **User Intent**: {goal}\n2. **Interaction Description**: {description}\n3. **Action Data**: {action}\n\n### COMMAND\nBased on the visual cues and interaction data, generate the HTML for the RESULTING UI STATE.\n"
 
     def __init__(self, base_url="http://127.0.0.1:18888", html_save_dir="/tmp/wm_htmls"):
-        import urllib.request
         self.base_url = base_url
         self.html_save_dir = html_save_dir
-        self._urlopen = urllib.request.urlopen
-        # Verify server is reachable
-        try:
-            self._urlopen(f"{base_url}/health", timeout=5)
-            print(f"WM server connected: {base_url}")
-        except Exception:
-            print(f"WM server not reachable at {base_url}, will use direct calls")
-            self.connected = False
-            return
         self.connected = True
+        print(f"WM client connected to vLLM server: {base_url}")
 
     def post(self, goal, description, image, action, html_save_path=None, idx=0):
-        """Call WM server to predict next state from (screenshot + action)."""
+        """Call vLLM OpenAI-compatible API to predict next state."""
         import base64
         import io
+        import re
         import json
-        import urllib.request
+        import numpy as np
 
         # Encode image to base64
         buf = io.BytesIO()
         image.save(buf, format="JPEG")
         image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-        payload = json.dumps({
-            "image_b64": image_b64,
-            "goal": goal,
-            "description": description,
-            "action": action,
-            "html_dir": html_save_path or self.html_save_dir,
-            "idx": idx,
-        }).encode()
+        user_text = self.USER_PROMPT.format(goal=goal, description=description, action=str(action))
 
+        payload = {
+            "model": "default",
+            "messages": [
+                {"role": "system", "content": [{"type": "text", "text": self.SYSTEM_PROMPT}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                        {"type": "text", "text": user_text},
+                    ],
+                },
+            ],
+            "max_tokens": 8192,
+            "temperature": 0.0,
+        }
+
+        req_data = json.dumps(payload).encode()
         req = urllib.request.Request(
-            f"{self.base_url}/predict",
-            data=payload,
+            f"{self.base_url}/v1/chat/completions",
+            data=req_data,
             headers={"Content-Type": "application/json"},
         )
         resp = self._urlopen(req, timeout=300)
         result = json.loads(resp.read())
 
-        if "error" in result:
-            print(f"WM server error: {result['error']}")
-            return None
+        output_text = result["choices"][0]["message"]["content"]
 
-        # Decode PNG
-        import numpy as np
-        png_bytes = base64.b64decode(result["png_b64"])
-        with Image.open(io.BytesIO(png_bytes)) as img:
+        # Extract clean HTML
+        text = output_text.replace("```html", "").replace("```", "")
+        start_match = re.search(r"<!DOCTYPE html>", text, re.IGNORECASE)
+        end_match = re.search(r"</html>", text, re.IGNORECASE)
+        clean_html = text[start_match.start():end_match.end()] if start_match and end_match else text.strip()
+
+        # Save HTML
+        import urllib.request
+        os.makedirs(self.html_save_dir, exist_ok=True)
+        html_path = os.path.join(self.html_save_dir, f'test_{idx}.html')
+        png_path = os.path.join(self.html_save_dir, f'test_{idx}.png')
+
+        with open(html_path, 'w') as f:
+            f.write(clean_html)
+
+        from android_world.agents.wm_utils import render_aligned_png
+        render_aligned_png(html_path, png_path)
+
+        with Image.open(png_path) as img:
             return np.array(img.convert("RGB"))
 
 
@@ -88,6 +115,7 @@ class WorldModelEnv:
             self.inferencer = QwenHTTPClient(base_url=wm_http_url, html_save_dir=html_save_dir)
         elif use_local_transformers:
             print(f"Loading local Transformers model: {model_name_or_path}, device_map={wm_device_map}")
+            from android_world.agents.qwen_model import QwenModel  # lazy import
             self.inferencer = QwenModel(model_name=model_name_or_path, device_map=wm_device_map)
         else:
             self.inferencer = MLLMInferencer(model_name=model_name_or_path, api_base=api_base, api_key=api_key)
@@ -116,6 +144,7 @@ class WorldModelEnv:
         self.step_idx += 1
         
         # Predict next state using World Model
+        from android_world.agents.qwen_model import QwenModel  # lazy import
         if isinstance(self.inferencer, QwenModel):
             # QwenModel.post handles saving HTML and rendering to PNG internally
             # We use action_text for both goal and description as a fallback

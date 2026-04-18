@@ -37,14 +37,21 @@ HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
-# 每节点启动一个 WM 服务 (独立的 conda env，不占 GPU)
+# 每节点启动一个 WM 服务 (独立的 conda env，用 vLLM + GPU)
 WM_PORT=18888
-echo "Starting WM server on $(hostname) port $WM_PORT"
+echo "Starting WM vLLM server on $(hostname) port $WM_PORT"
 source ~/jyy/anaconda/etc/profile.d/conda.sh
-conda run -n wm --no-capture-output \
-    python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
-    --model "$WM_MODEL_PATH" --port $WM_PORT --device "cpu" &
-sleep 5
+# WM 服务用 GPU 0
+CUDA_VISIBLE_DEVICES=0 conda run -n wm --no-capture-output \
+    python -m vllm.entrypoints.openai.api_server \
+    --model "$WM_MODEL_PATH" \
+    --host 0.0.0.0 \
+    --port $WM_PORT \
+    --tensor-parallel-size 1 \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code &
+sleep 10
 export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
 
 # 在当前节点启动 Ray Head

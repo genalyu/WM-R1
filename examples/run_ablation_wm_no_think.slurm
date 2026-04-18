@@ -38,15 +38,20 @@ export PROJECT_DIR
 mkdir -p $PROJECT_DIR/wandb
 export WANDB_DIR=$PROJECT_DIR/wandb
 
-# 每节点启动一个 WM 服务 (独立的 conda env)
+# 每节点启动一个 WM 服务 (独立的 conda env，用 vLLM 推理)
 WM_PORT=18889
-WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
-echo "Starting WM server on $(hostname) port $WM_PORT"
+echo "Starting WM vLLM server on $(hostname) port $WM_PORT"
 source ~/jyy/anaconda/etc/profile.d/conda.sh
 conda run -n wm --no-capture-output \
-    python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
-    --model "$WM_MODEL_PATH" --port $WM_PORT --device "cpu" &
-sleep 5
+    python -m vllm.entrypoints.openai.api_server \
+    --model "$WM_MODEL_PATH" \
+    --host 0.0.0.0 \
+    --port $WM_PORT \
+    --device cpu \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code &
+sleep 10
 export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
 
 # --- 启动 Ray 集群 (多节点支持) ---
