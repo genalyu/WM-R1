@@ -116,6 +116,7 @@ python3 -m verl.trainer.main \
     env.use_wm=True \
     env.use_local_wm=True \
     env.wm_model_name="${WM_MODEL_PATH}" \
+    env.wm_device_map="cpu" \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \

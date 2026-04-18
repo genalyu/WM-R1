@@ -101,6 +101,7 @@ class EnvConfig:
     wm_model_name: Optional[str] = None
     wm_api_base: Optional[str] = None
     wm_api_key: Optional[str] = None
+    wm_device_map: str = "auto"
     n_wm_max: int = 5
 
 @dataclass

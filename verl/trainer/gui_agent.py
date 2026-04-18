@@ -24,10 +24,10 @@ from android_world.agents.qwen_model import QwenModel
 
 
 class WorldModelEnv:
-    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True, html_save_dir="wm_htmls"):
+    def __init__(self, model_name_or_path="internvl3-78b", api_base=None, api_key=None, use_local_transformers=True, wm_device_map="auto", html_save_dir="wm_htmls"):
         if use_local_transformers:
-            print(f"Loading local Transformers model: {model_name_or_path}")
-            self.inferencer = QwenModel(model_name=model_name_or_path)
+            print(f"Loading local Transformers model: {model_name_or_path}, device_map={wm_device_map}")
+            self.inferencer = QwenModel(model_name=model_name_or_path, device_map=wm_device_map)
         else:
             self.inferencer = MLLMInferencer(model_name=model_name_or_path, api_base=api_base, api_key=api_key)
         
@@ -665,6 +665,7 @@ class EnvWorker():
                 api_base=getattr(config.env, "wm_api_base", None),
                 api_key=getattr(config.env, "wm_api_key", None),
                 use_local_transformers=getattr(config.env, "use_local_wm", True),
+                wm_device_map=getattr(config.env, "wm_device_map", "auto"),
                 html_save_dir=html_save_dir
             )
         else:
