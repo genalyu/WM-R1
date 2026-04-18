@@ -913,6 +913,75 @@ class EnvWorker():
 
         self.reset_train_tensors()
 
+        # --- Baseline mode: no env, build obs_messages directly from init_screenshot ---
+        if self.env is None:
+            init_screenshot = task_config.get("init_screenshot", None)
+            if init_screenshot is None:
+                self.is_init = True
+                self.is_done = True
+                print('No init_screenshot in task_config for baseline reset')
+                return {
+                    "env_idx": self.worker_idx,
+                    "obs_messages": None,
+                    "is_done": self.is_done,
+                    'format_reward': 0.0
+                }
+
+            if isinstance(init_screenshot, bytes):
+                init_image = Image.open(BytesIO(init_screenshot))
+                init_screenshot = np.array(init_image)
+
+            image_base64 = base64.b64encode(BytesIO(init_screenshot.tobytes())).decode("utf-8")
+            # Re-encode as proper JPEG bytes
+            img_bytes = BytesIO()
+            Image.fromarray(init_screenshot).save(img_bytes, format='JPEG')
+            image_base64 = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
+
+            init_messages = [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Your are a helpful assistant."
+                        }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self.system_prompt.format(instruction=self.instruction)
+                        }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": f"data:image/jpeg;base64,{image_base64}",
+                            "min_pixels": 3136,
+                            "max_pixels": 2116800,
+                        }
+                    ]
+                }
+            ]
+
+            self.history_images = [init_screenshot]
+            self.history_messages = init_messages
+            self.is_init = True
+            self.process_message(init_messages)
+
+            return {
+                'env_idx': self.worker_idx,
+                'obs_messages': self.history_messages,
+                'is_done': self.is_done,
+                'format_reward': 0.0
+            }
+
+        # --- WM mode: use actual env ---
         trial_time = 0
         while trial_time < 8:
             try:
