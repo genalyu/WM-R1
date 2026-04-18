@@ -42,7 +42,6 @@ cd $(dirname $(dirname $(realpath $0)))
 export PYTHONPATH=$PYTHONPATH:$(pwd)/Code2World
 
 # --- 环境变量修复 ---
-export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 

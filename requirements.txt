@@ -3,6 +3,10 @@ datasets
 liger_kernel
 mathruler
 mlflow
+ray>=2.10
+protobuf>=4.21
+mlflow>=2.10
+wandb>=0.16
 qwen_vl_utils
 swanlab
 tensordict

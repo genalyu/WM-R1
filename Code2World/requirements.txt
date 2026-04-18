@@ -120,7 +120,7 @@ pytz
 PyYAML
 qwen-vl-utils
 RapidFuzz
-ray
+ray>=2.10
 regex
 requests
 rsa
