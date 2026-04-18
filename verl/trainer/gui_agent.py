@@ -142,12 +142,12 @@ class WorldModelEnv:
 
     def step(self, action_text, pause=0.5):
         self.step_idx += 1
-        
+
         # Predict next state using World Model
-        from android_world.agents.qwen_model import QwenModel  # lazy import
-        if isinstance(self.inferencer, QwenModel):
+        # Only use local transformers for QwenModel (wm conda env)
+        # HTTP mode uses QwenHTTPClient which doesn't need transformers
+        if self.inferencer.__class__.__name__ == "QwenModel":
             # QwenModel.post handles saving HTML and rendering to PNG internally
-            # We use action_text for both goal and description as a fallback
             next_state_array = self.inferencer.post(
                 goal=getattr(self, "instruction", action_text),
                 description=action_text,
@@ -890,7 +890,7 @@ class EnvWorker():
         image_count = 0
         pixel_values = []
         image_grid_thw = []
-        for turn_idx, msg in enumerate(message):
+        for msg in message:
             role = msg['role']
             content = self.load_content(msg['content'])
             prompt = f'<|im_start|>{role}\n' + content + '<|im_end|>\n'
@@ -1251,15 +1251,16 @@ class EnvWorker():
                 # Execute simulation in WorldModelEnv
                 obs, reward, step_done, _ = self.env.step(action_desc)
                 obs_screenshot = obs['screenshot']
-                print(f"WM screenshot type: {type(obs_screenshot)}, shape/len: {getattr(obs_screenshot, 'shape', len(obs_screenshot) if obs_screenshot else 0)}")
+
                 # Convert to valid JPEG bytes
                 if isinstance(obs_screenshot, np.ndarray):
                     if obs_screenshot.ndim != 3 or obs_screenshot.shape[2] != 3:
                         raise ValueError(f"Invalid WM screenshot shape: {obs_screenshot.shape}")
+                    # Ensure dtype is uint8 for PIL conversion
                     if obs_screenshot.dtype != np.uint8:
-                        obs_screenshot = obs_screenshot.astype(np.uint8)
+                        obs_screenshot = np.clip(obs_screenshot, 0, 255).astype(np.uint8)
                     buffer = BytesIO()
-                    Image.fromarray(obs_screenshot).save(buffer, format="JPEG")
+                    Image.fromarray(obs_screenshot).save(buffer, format="JPEG", quality=95)
                     obs_screenshot = buffer.getvalue()
                 elif isinstance(obs_screenshot, bytes):
                     # Validate it's a real image
