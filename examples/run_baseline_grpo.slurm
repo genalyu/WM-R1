@@ -142,7 +142,8 @@ python3 -m verl.trainer.main \
     algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
-    env.max_steps=15
+    env.max_steps=15 \
+    data.num_workers=4
 
 # --- 5. 清理 ---
 ray stop

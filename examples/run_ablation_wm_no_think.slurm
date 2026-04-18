@@ -39,11 +39,12 @@ mkdir -p $PROJECT_DIR/wandb
 export WANDB_DIR=$PROJECT_DIR/wandb
 
 # 每节点启动一个 WM 服务 (独立的 conda env，用 vLLM 推理)
+# 注意: n_wm_max=0 禁用 call_wm 深度思考，但 WM 仍用于 env step 模拟
 WM_PORT=18889
 echo "Starting WM vLLM server on $(hostname) port $WM_PORT"
 source ~/jyy/anaconda/etc/profile.d/conda.sh
-conda run -n wm --no-capture-output \
-    python -m vllm.entrypoints.openai.api_server \
+conda activate wm
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
     --model "$WM_MODEL_PATH" \
     --host 0.0.0.0 \
     --port $WM_PORT \

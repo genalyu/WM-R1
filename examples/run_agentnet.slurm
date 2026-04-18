@@ -42,8 +42,10 @@ WM_PORT=18888
 echo "Starting WM vLLM server on $(hostname) port $WM_PORT"
 source ~/jyy/anaconda/etc/profile.d/conda.sh
 # WM 服务用 GPU 0
-CUDA_VISIBLE_DEVICES=0 conda run -n wm --no-capture-output \
-    python -m vllm.entrypoints.openai.api_server \
+export CONDA_PREFIX=""
+eval "$(conda shell.bash hook)"
+conda activate wm
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
     --model "$WM_MODEL_PATH" \
     --host 0.0.0.0 \
     --port $WM_PORT \

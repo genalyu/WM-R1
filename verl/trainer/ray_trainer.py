@@ -358,7 +358,7 @@ class RayPPOTrainer:
             dataset=self.train_dataset,
             batch_size=self.config.data.rollout_batch_size,
             sampler=sampler,
-            num_workers=8,
+            num_workers=self.config.data.num_workers,
             collate_fn=collate_fn,
             pin_memory=False,
             drop_last=True,
@@ -367,12 +367,12 @@ class RayPPOTrainer:
         self.val_dataset = OSWorldTaskConfigDataset(
             data_path=self.config.data.val_files,
         )
-        
+
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
             batch_size=min(self.config.env.num_envs, len(self.val_dataset)), # use the same number as envs
             shuffle=False,
-            num_workers=8,
+            num_workers=self.config.data.num_workers,
             collate_fn=collate_fn,
             pin_memory=False,
             drop_last=False,
