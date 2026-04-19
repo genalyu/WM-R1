@@ -49,8 +49,6 @@ def log_probs_from_logits_flash_attn(logits: torch.Tensor, labels: torch.Tensor)
 def log_probs_from_logits(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     """Compute log probs on the label ids given logits.
 
-    We may use torch compile to speed up computing.
-
     Args:
         logits (torch.Tensor): logits of the model, shape (batch_size, seqlen, vocab_size)
         labels (torch.Tensor): labels of the model, shape (batch_size, seqlen)
@@ -58,16 +56,25 @@ def log_probs_from_logits(logits: torch.Tensor, labels: torch.Tensor) -> torch.T
     Returns:
         torch.Tensor: log probs of the labels, shape (batch_size, seqlen)
     """
-    batch_dim = logits.shape[:-1]
     vocab_dim = logits.shape[-1]
+    batch_size = logits.shape[0]
     logits = logits.contiguous().view(-1, vocab_dim)
     labels = labels.contiguous().view(-1)
+
+    # Flash-attn cross_entropy_loss silently truncates mismatched lengths.
+    # Torch fallback must do the same.
+    min_len = min(logits.size(0), labels.size(0))
+    if logits.size(0) != labels.size(0):
+        logits = logits[:min_len]
+        labels = labels[:min_len]
+
     if FLAH_ATTN_CROSS_ENTROPY_LOSS_AVAILABLE:
         output = log_probs_from_logits_flash_attn(logits, labels)
     else:  # fall back to torch kernel, upcast logits to fp32
         output = F.cross_entropy(logits.float(), labels, reduction="none")
 
-    return output.view(*batch_dim)
+    seq_len = min_len // batch_size
+    return output.view(batch_size, seq_len)
 
 
 def masked_mean(values: torch.Tensor, mask: torch.Tensor, dim: int = None, eps: float = 1e-8) -> torch.Tensor:
