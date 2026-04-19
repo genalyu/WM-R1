@@ -48,8 +48,10 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
         """Call vLLM OpenAI-compatible API to predict next state."""
         import base64
         import io
+        import os
         import re
         import json
+        import urllib.request
         import numpy as np
 
         # Encode image to base64
@@ -93,7 +95,6 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
         clean_html = text[start_match.start():end_match.end()] if start_match and end_match else text.strip()
 
         # Save HTML
-        import urllib.request
         os.makedirs(self.html_save_dir, exist_ok=True)
         html_path = os.path.join(self.html_save_dir, f'test_{idx}.html')
         png_path = os.path.join(self.html_save_dir, f'test_{idx}.png')
@@ -1260,9 +1261,21 @@ class EnvWorker():
                     # Ensure dtype is uint8 for PIL conversion
                     if obs_screenshot.dtype != np.uint8:
                         obs_screenshot = np.clip(obs_screenshot, 0, 255).astype(np.uint8)
+                    # Verify no NaN/Inf
+                    if np.any(np.isnan(obs_screenshot.astype(float))):
+                        raise ValueError("WM screenshot contains NaN values")
+                    # Convert and verify
+                    pil_img = Image.fromarray(obs_screenshot).convert("RGB")
                     buffer = BytesIO()
-                    Image.fromarray(obs_screenshot).save(buffer, format="JPEG", quality=95)
+                    pil_img.save(buffer, format="JPEG", quality=95)
                     obs_screenshot = buffer.getvalue()
+                    if len(obs_screenshot) == 0:
+                        raise ValueError("WM screenshot conversion produced empty bytes")
+                    # Verify the JPEG is valid
+                    try:
+                        Image.open(BytesIO(obs_screenshot)).verify()
+                    except Exception as e:
+                        raise ValueError(f"WM screenshot JPEG verification failed: {e}")
                 elif isinstance(obs_screenshot, bytes):
                     # Validate it's a real image
                     try:

@@ -820,10 +820,7 @@ class RayPPOTrainer:
 
                 metrics, timing_raw = {}, {}
 
-
-                print([config['id'] for config in task_configs])
                 print(f"task_num: {len(task_configs)}, env_num: {len(self.env_workers)}")
-                print([config['instruction'] for config in task_configs])
 
                 with _timer("step", timing_raw):
                     self.actor_rollout_wg.prepare_generate_sequences()
