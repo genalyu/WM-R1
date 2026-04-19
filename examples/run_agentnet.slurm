@@ -99,11 +99,11 @@ if ! kill -0 $RAY_HEAD_PID 2>/dev/null; then
     exit 1
 fi
 
-# 等待 GCS 就绪 (Ray 初始化 GPU 可能需要几分钟，超时设为 5 分钟)
+# 等待 GCS 就绪 (用 ray status 探测，Ray 初始化 GPU 可能需要几分钟)
 echo "Waiting for GCS to become available..."
 GCS_READY=0
-for i in $(seq 1 360); do
-    if ray healthcheck 2>/dev/null; then
+for i in $(seq 1 300); do
+    if ray status 2>/dev/null | grep -q "Head"; then
         echo "GCS ready after ${i}s"
         GCS_READY=1
         break
