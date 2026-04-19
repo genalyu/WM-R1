@@ -39,8 +39,8 @@ export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
 export TORCH_COMPILE_DISABLE=1
 export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
 
-cd $(dirname $(dirname $(realpath $0)))
-PROJECT_DIR=$(pwd)
+cd /public/home/xlwang/genalyu/WM-R1
+PROJECT_DIR="/public/home/xlwang/genalyu/WM-R1"
 export PROJECT_DIR
 export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/
 
