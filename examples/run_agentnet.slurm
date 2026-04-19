@@ -82,14 +82,22 @@ nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
     > /tmp/ray_head.log 2>&1 &
 
+# 等待 GCS 就绪 (主动探测，超时退出)
 echo "Waiting for GCS to become available..."
+GCS_READY=0
 for i in $(seq 1 60); do
     if ray healthcheck 2>/dev/null; then
         echo "GCS ready after ${i}s"
+        GCS_READY=1
         break
     fi
     sleep 1
 done
+if [ "$GCS_READY" -ne 1 ]; then
+    echo "ERROR: Ray GCS failed to start after 60s. Check /tmp/ray_head.log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
 
 # 其他节点启动 Ray Worker + WM vLLM 服务
 sleep 5
