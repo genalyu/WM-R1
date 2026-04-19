@@ -8,7 +8,7 @@
 #SBATCH --mem=64G
 #SBATCH --output=logs/debug_img_%j.out
 #SBATCH --error=logs/debug_img_%j.err
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 
 source ~/.bashrc
 source ~/jyy/anaconda/etc/profile.d/conda.sh
