@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1_ablation_wm_no_think
 #SBATCH --partition=a100
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=24
 #SBATCH --mem=300G
 #SBATCH --output=logs/ablation_wm_no_think_%j.out
 #SBATCH --error=logs/ablation_wm_no_think_%j.err
@@ -20,6 +20,14 @@
 source ~/.bashrc
 source ~/jyy/anaconda/etc/profile.d/conda.sh
 conda activate 3spo
+
+# 清理所有残留 Ray 状态
+ray stop --force 2>/dev/null || true
+rm -rf /tmp/ray
+rm -rf ~/.config/ray/
+pkill -9 -f raylet 2>/dev/null || true
+pkill -9 -f gcs_server 2>/dev/null || true
+sleep 2
 
 # --- 全局环境变量 ---
 export WANDB_PROJECT="wm-r1"
@@ -58,18 +66,24 @@ sleep 10
 export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
 echo "WM server URL: $WM_HTTP_URL"
 
+# 等 WM server 真正可用
+for i in $(seq 1 120); do
+    if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
+        echo "WM server ready after ${i}s"
+        break
+    fi
+    sleep 1
+done
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
 # 启动 Ray Head (GPU 1 only, GPU 0 is for WM vLLM)
-ray stop --force 2>/dev/null || true
-rm -rf /tmp/ray
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 export CUDA_VISIBLE_DEVICES=1
-ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-    --num-gpus=1 \
-    --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
+nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+    --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
+    > /tmp/ray_head.log 2>&1 &
 
 echo "Waiting for GCS to become available..."
 for i in $(seq 1 60); do
@@ -111,19 +125,35 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 --model '"$WM_MODEL_PATH"' \
                 --host 0.0.0.0 \
                 --port $WM_PORT \
-                --device cpu \
+                --tensor-parallel-size 1 \
                 --max-model-len 8192 \
                 --gpu-memory-utilization 0.9 \
                 --trust-remote-code &
             sleep 10
 
+            # Wait for WM server to become available
+            echo "Waiting for WM server on $(hostname)..."
+            for i in $(seq 1 120); do
+                if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
+                    echo "WM server on $(hostname) ready after ${i}s"
+                    break
+                fi
+                sleep 1
+            done
             # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
+            rm -rf ~/.config/ray/
+            pkill -9 -f raylet 2>/dev/null || true
+            pkill -9 -f gcs_server 2>/dev/null || true
+            sleep 2
             export CUDA_VISIBLE_DEVICES=1
-            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
-        ' &
-    sleep 10
+            nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" \
+                > /tmp/ray_worker.log 2>&1 &
+            disown
+            echo "Ray worker started on $(hostname)"
+        '
+    echo "All worker nodes initialized"
 fi
 
 # --- 2. 配置 ---
@@ -139,10 +169,43 @@ NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rol
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
+# --- 等待所有 Ray 节点 GPU 就绪 ---
+EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
+echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
+for i in $(seq 1 120); do
+    ray status > /tmp/ray_status.txt 2>/dev/null
+    if [ $? -eq 0 ]; then
+        # Parse GPU count from ray status output
+        # Example: "GPU (0.0-1.0): 2.0/2.0 used"
+        AVAILABLE_GPU=$(grep "^GPU" /tmp/ray_status.txt | head -1 | grep -oP '\d+\.0(?=/)' | head -1 | cut -d'.' -f1)
+        if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
+    fi
+    if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
+        echo "Ray cluster ready: $AVAILABLE_GPU GPUs after ${i}s"
+        break
+    fi
+    if [ $((i % 10)) -eq 0 ]; then
+        echo "  ${i}s: only $AVAILABLE_GPU/$EXPECTED_GPU GPUs ready..."
+    fi
+    sleep 1
+done
+if [ "$AVAILABLE_GPU" -lt "$EXPECTED_GPU" ]; then
+    echo "ERROR: Only $AVAILABLE_GPU/$EXPECTED_GPU GPUs available after 120s. Worker nodes may not have joined."
+    exit 1
+fi
+
 # --- 3. 训练 (GPU 1, HTTP 连接 WM) ---
 cd $PROJECT_DIR
 conda activate 3spo
 export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+
+# NCCL 跨节点通信配置
+export NCCL_DEBUG=INFO
+export NCCL_SOCKET_IFNAME=eth0,ib0,eno,ens,enp
+export NCCL_IB_DISABLE=0
+export NCCL_P2P_DISABLE=0
+export NCCL_BLOCKING_WAIT=1
+export NCCL_TIMEOUT=600
 
 # 限制线程数，避免 Ray worker 过多导致资源竞争
 export TOKENIZERS_PARALLELISM=false
@@ -188,7 +251,7 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.6 \
+    worker.rollout.gpu_memory_utilization=0.4 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
