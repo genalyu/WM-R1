@@ -85,7 +85,23 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
             data=req_data,
             headers={"Content-Type": "application/json"},
         )
-        resp = urllib.request.urlopen(req, timeout=300)
+
+        # Retry with backoff — concurrent EnvWorkers can overwhelm vLLM
+        max_retries = 5
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                resp = urllib.request.urlopen(req, timeout=300)
+                break
+            except (urllib.error.URLError, OSError) as e:
+                last_err = e
+                import time
+                delay = 2 ** attempt
+                print(f"[WM post] Connection failed (attempt {attempt+1}/{max_retries}), retrying in {delay}s: {e}")
+                time.sleep(delay)
+        else:
+            raise RuntimeError(f"WM vLLM server unreachable after {max_retries} retries: {last_err}") from last_err
+
         result = json.loads(resp.read())
 
         output_text = result["choices"][0]["message"]["content"]
@@ -138,7 +154,22 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
             data=req_data,
             headers={"Content-Type": "application/json"},
         )
-        resp = urllib.request.urlopen(req, timeout=300)
+
+        max_retries = 5
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                resp = urllib.request.urlopen(req, timeout=300)
+                break
+            except (urllib.error.URLError, OSError) as e:
+                last_err = e
+                import time
+                delay = 2 ** attempt
+                print(f"[WM predict_mm] Connection failed (attempt {attempt+1}/{max_retries}), retrying in {delay}s: {e}")
+                time.sleep(delay)
+        else:
+            raise RuntimeError(f"WM vLLM server unreachable after {max_retries} retries: {last_err}") from last_err
+
         result = json.loads(resp.read())
 
         output_text = result["choices"][0]["message"]["content"]

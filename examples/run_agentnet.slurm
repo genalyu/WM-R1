@@ -57,6 +57,14 @@ sleep 10
 export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
 echo "WM server URL: $WM_HTTP_URL"
 
+# 等 WM server 真正可用
+for i in $(seq 1 120); do
+    if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
+        echo "WM server ready after ${i}s"
+        break
+    fi
+    sleep 1
+done
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
@@ -113,7 +121,15 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 --gpu-memory-utilization 0.9 \
                 --trust-remote-code &
             sleep 10
-
+            # Wait for WM server to become available
+            echo "Waiting for WM server on $(hostname)..."
+            for i in $(seq 1 120); do
+                if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
+                    echo "WM server on $(hostname) ready after ${i}s"
+                    break
+                fi
+                sleep 1
+            done
             # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
@@ -192,7 +208,7 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.7 \
+    worker.rollout.gpu_memory_utilization=0.6 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
