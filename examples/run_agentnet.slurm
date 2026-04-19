@@ -165,17 +165,37 @@ NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rol
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
+# --- 诊断: 检查 Ray head 状态 ---
+echo "=== Ray head log (last 30 lines) ==="
+tail -30 /tmp/ray_head.log 2>/dev/null || echo "ray_head.log not found"
+
+echo "=== nvidia-smi ==="
+nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader
+
+echo "=== ray nodes ==="
+ray list nodes 2>/dev/null || echo "ray list nodes failed"
+
+echo "=== ray status (full) ==="
+ray status 2>/dev/null || echo "ray status failed"
+
 # --- 等待所有 Ray 节点 GPU 就绪 ---
 EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
 echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
+AVAILABLE_GPU=0
 for i in $(seq 1 120); do
-    ray status > /tmp/ray_status.txt 2>/dev/null
-    if [ $? -eq 0 ]; then
-        # Parse GPU count from ray status output
-        # Example: "GPU (0.0-1.0): 2.0/2.0 used"
-        AVAILABLE_GPU=$(grep "^GPU" /tmp/ray_status.txt | head -1 | grep -oP '\d+\.0(?=/)' | head -1 | cut -d'.' -f1)
-        if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
-    fi
+    # Use Python to query Ray cluster resources (more reliable than parsing ray status text)
+    AVAILABLE_GPU=$(python3 -c "
+import ray
+try:
+    total = ray.cluster_resources().get('GPU', 0)
+    avail = ray.available_resources().get('GPU', 0)
+    # cluster_resources = total, available_resources = currently free
+    # Use total since we just want to confirm nodes joined
+    print(int(total))
+except Exception:
+    print(0)
+" 2>/dev/null)
+    if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
     if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
         echo "Ray cluster ready: $AVAILABLE_GPU GPUs after ${i}s"
         break
