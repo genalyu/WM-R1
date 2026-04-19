@@ -30,6 +30,10 @@ try:
 except ImportError:
     FLAH_ATTN_CROSS_ENTROPY_LOSS_AVAILABLE = False
 
+# Disable flash-attn cross_entropy by default — it may crash with torch.compile
+# or incompatible flash-attn versions. The torch fallback is reliable.
+FLAH_ATTN_CROSS_ENTROPY_LOSS_AVAILABLE = False
+
 
 @torch.compiler.disable()
 def log_probs_from_logits_flash_attn(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
