@@ -1018,7 +1018,7 @@ class EnvWorker():
                 attention_mask=self.attention_mask,
             )
         
-        input_ids, attention_mask, position_ids, labels = VF.postprocess_data(
+        input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw = VF.postprocess_data(
                 input_ids=self.input_ids,
                 attention_mask=self.attention_mask,
                 position_ids=position_ids,
@@ -1026,8 +1026,13 @@ class EnvWorker():
                 pad_token_id=self.tokenizer.pad_token_id,
                 left_pad=True,
                 truncation='right',
-                labels=self.labels
+                labels=self.labels,
+                image_token_id=self.tokenizer.convert_tokens_to_ids("<|image_pad|>"),
+                pixel_values=self.pixel_values,
+                image_grid_thw=self.image_grid_thw,
             )
+        self.pixel_values = pixel_values
+        self.image_grid_thw = image_grid_thw
         data = {
             'input_ids': input_ids,
             'labels': labels,

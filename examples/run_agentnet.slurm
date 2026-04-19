@@ -73,8 +73,7 @@ export VLLM_HOST_IP=$HEAD_NODE_IP
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 export CUDA_VISIBLE_DEVICES=1
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-    --num-gpus=1 \
-    --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
+    --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
 
 echo "Waiting for GCS to become available..."
 for i in $(seq 1 60); do
@@ -134,7 +133,9 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
             export CUDA_VISIBLE_DEVICES=1
-            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
+            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" &
+            # Wait for worker to join
+            sleep 5
         ' &
     sleep 10
 fi
@@ -212,7 +213,7 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=4096 \
+    data.max_prompt_length=8192 \
     data.max_response_length=512 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
@@ -233,7 +234,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=5120 \
+    worker.rollout.max_num_batched_tokens=9000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \

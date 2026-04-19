@@ -160,7 +160,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             attention_mask = model_inputs.pop("attention_mask")[0]
             position_ids = torch.clip(attention_mask.cumsum(dim=0) - 1, min=0, max=None)  # (seq_length,)
 
-        input_ids, attention_mask, position_ids = VF.postprocess_data(
+        input_ids, attention_mask, position_ids, _, _, _ = VF.postprocess_data(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,

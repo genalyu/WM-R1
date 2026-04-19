@@ -167,10 +167,19 @@ def postprocess_data(
     left_pad: bool = True,
     truncation: Literal["left", "right", "error"] = "error",
     labels=None,
+    image_token_id: int = None,
+    pixel_values=None,
+    image_grid_thw=None,
 ):
     """Pad or truncate data."""
     assert truncation in ["left", "right", "error"]
     seq_length = len(input_ids)
+
+    # Track image tokens before truncation to sync pixel_values
+    n_image_tokens_before = 0
+    if image_token_id is not None:
+        n_image_tokens_before = (input_ids == image_token_id).sum().item()
+
     if seq_length < max_length:
         input_ids = pad_sequence_to_length(
             input_ids, max_seq_len=max_length, pad_token_id=pad_token_id, left_pad=left_pad
@@ -195,10 +204,22 @@ def postprocess_data(
         else:
             raise NotImplementedError(f"Unknown truncation method {truncation}.")
 
+        # If input_ids was truncated and pixel_values provided, adjust to match
+        if pixel_values is not None and image_grid_thw is not None and n_image_tokens_before > 0:
+            n_image_tokens_after = (input_ids == image_token_id).sum().item()
+            if n_image_tokens_after < n_image_tokens_before:
+                # Truncate pixel_values proportionally
+                n_features_before = pixel_values.shape[0]
+                n_features_after = int(n_features_before * n_image_tokens_after / n_image_tokens_before)
+                pixel_values = pixel_values[:n_features_after]
+                # Remove images from grid whose tokens were fully dropped
+                if n_image_tokens_after == 0:
+                    image_grid_thw = image_grid_thw[:0]
+
     if labels is not None:
-        return input_ids, attention_mask, position_ids, labels
+        return input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw
     else:
-        return input_ids, attention_mask, position_ids
+        return input_ids, attention_mask, position_ids, pixel_values, image_grid_thw
 
 
 def get_constant_schedule_with_warmup(

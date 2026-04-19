@@ -355,7 +355,7 @@ class OSWorldDataset(Dataset, ImageProcessMixin):
             position_ids = torch.zeros((3, 0), dtype=torch.int64)
             row_dict['multi_modal_inputs'] = dict()
 
-        input_ids, attention_mask, position_ids = VF.postprocess_data(
+        input_ids, attention_mask, position_ids, _, _, _ = VF.postprocess_data(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -474,7 +474,7 @@ class GRPODatasetProcessor:
             model_inputs = dict()
 
         if post_process:
-            input_ids, attention_mask, position_ids, labels = VF.postprocess_data(
+            input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw = VF.postprocess_data(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -482,8 +482,13 @@ class GRPODatasetProcessor:
                 pad_token_id=self.tokenizer.pad_token_id,
                 left_pad=True,
                 truncation=self.truncation,
-                labels=labels
+                labels=labels,
+                image_token_id=self.tokenizer.convert_tokens_to_ids("<|image_pad|>"),
+                pixel_values=model_inputs.get("pixel_values"),
+                image_grid_thw=model_inputs.get("image_grid_thw"),
             )
+            model_inputs["pixel_values"] = pixel_values
+            model_inputs["image_grid_thw"] = image_grid_thw
         row_dict = dict()
         row_dict["input_ids"] = input_ids
         row_dict["labels"] = labels
@@ -627,7 +632,7 @@ class OSWorldGRPODataset(ImageProcessMixin):
             model_inputs = dict()
 
 
-        input_ids, attention_mask, position_ids, labels = VF.postprocess_data(
+        input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw = VF.postprocess_data(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -635,8 +640,13 @@ class OSWorldGRPODataset(ImageProcessMixin):
             pad_token_id=self.tokenizer.pad_token_id,
             left_pad=True,
             truncation=self.truncation,
-            labels=labels
+            labels=labels,
+            image_token_id=self.tokenizer.convert_tokens_to_ids("<|image_pad|>"),
+            pixel_values=model_inputs.get("pixel_values"),
+            image_grid_thw=model_inputs.get("image_grid_thw"),
         )
+        model_inputs["pixel_values"] = pixel_values
+        model_inputs["image_grid_thw"] = image_grid_thw
         row_dict = dict()
         row_dict["input_ids"] = input_ids
         row_dict["labels"] = labels
