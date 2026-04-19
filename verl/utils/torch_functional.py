@@ -208,13 +208,31 @@ def postprocess_data(
         if pixel_values is not None and image_grid_thw is not None and n_image_tokens_before > 0:
             n_image_tokens_after = (input_ids == image_token_id).sum().item()
             if n_image_tokens_after < n_image_tokens_before:
-                # Truncate pixel_values proportionally
-                n_features_before = pixel_values.shape[0]
-                n_features_after = int(n_features_before * n_image_tokens_after / n_image_tokens_before)
-                pixel_values = pixel_values[:n_features_after]
-                # Remove images from grid whose tokens were fully dropped
-                if n_image_tokens_after == 0:
+                merge_size = 2
+                # Compute how many complete images were dropped
+                tokens_per_image = []
+                for t, h, w in image_grid_thw.tolist():
+                    tokens_per_image.append(t * (h // merge_size) * (w // merge_size))
+                tokens_dropped = n_image_tokens_before - n_image_tokens_after
+                n_images_to_remove = 0
+                dropped_so_far = 0
+                for i in range(len(tokens_per_image) - 1, -1, -1):
+                    dropped_so_far += tokens_per_image[i]
+                    if dropped_so_far <= tokens_dropped:
+                        n_images_to_remove += 1
+                    else:
+                        break
+                # Remove trailing images from grid_thw
+                if n_images_to_remove > 0:
+                    image_grid_thw = image_grid_thw[:len(image_grid_thw) - n_images_to_remove]
+                # Truncate pixel_values to match remaining images
+                remaining_tokens = sum(tokens_per_image[:len(tokens_per_image) - n_images_to_remove]) if len(tokens_per_image) > n_images_to_remove else 0
+                n_features_after = remaining_tokens * (merge_size ** 2)
+                if n_features_after < pixel_values.shape[0]:
+                    pixel_values = pixel_values[:n_features_after]
+                elif n_images_to_remove == len(tokens_per_image):
                     image_grid_thw = image_grid_thw[:0]
+                    pixel_values = pixel_values[:0]
 
     if labels is not None:
         return input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw

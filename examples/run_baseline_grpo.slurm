@@ -54,15 +54,22 @@ echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --num-gpus=2 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
 
-# 等待 GCS 就绪 (主动探测，不等死 sleep)
+# 等待 GCS 就绪 (Ray 初始化 GPU 可能需要几分钟，超时设为 5 分钟)
 echo "Waiting for GCS to become available..."
-for i in $(seq 1 60); do
+GCS_READY=0
+for i in $(seq 1 300); do
     if ray healthcheck 2>/dev/null; then
         echo "GCS ready after ${i}s"
+        GCS_READY=1
         break
     fi
     sleep 1
 done
+if [ "$GCS_READY" -ne 1 ]; then
+    echo "ERROR: Ray GCS failed to start after 300s. Check /tmp/ray_head.log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
 
 sleep 5
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
