@@ -112,7 +112,7 @@ SYSTEM_PROMPT="You are a helpful assistant."
 # 根据 Slurm 资源自动获取
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
-ROLLOUT_N=$((3 * NUM_NODES))
+ROLLOUT_N=$((2 * NUM_NODES))
 NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rollout_n
 
 # 数据集路径
