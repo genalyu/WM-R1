@@ -127,7 +127,7 @@ python3 -m verl.trainer.main \
     trainer.save_freq=16 \
     trainer.save_limit=3 \
     trainer.val_before_train=True \
-    trainer.val_freq=16 \
+    trainer.val_freq=10000 \
     trainer.total_episodes=15 \
     env.use_wm=False \
     data.train_files="${TRAIN_FILES}" \

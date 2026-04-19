@@ -81,6 +81,17 @@ class DataParallelPPOActor(BasePPOActor):
                 multi_modal_inputs[key] = torch.cat(
                     [inputs[key] for inputs in micro_batch["multi_modal_inputs"]], dim=0
                 )
+            # Validate pixel_values and image_grid_thw consistency
+            if "pixel_values" in multi_modal_inputs and "image_grid_thw" in multi_modal_inputs:
+                pv = multi_modal_inputs["pixel_values"]
+                grid = multi_modal_inputs["image_grid_thw"]
+                merge_size = 2
+                expected_tokens = sum(t * (h // merge_size) * (w // merge_size) for t, h, w in grid.tolist())
+                actual_patches = pv.shape[0]
+                expected_patches = expected_tokens * (merge_size ** 2)
+                if actual_patches != expected_patches:
+                    print(f"[DEBUG] pixel_values mismatch! actual_patches={actual_patches}, expected_patches={expected_patches}, expected_tokens={expected_tokens}")
+                    print(f"[DEBUG] image_grid_thw={grid.tolist()}, pixel_values.shape={pv.shape}")
 
         if self.config.padding_free:
             input_ids_rmpad, indices, *_ = unpad_input(
