@@ -152,6 +152,25 @@ NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rol
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
+# --- 等待所有 Ray 节点 GPU 就绪 ---
+EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
+echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs (nodes=$NUM_NODES, gpus_per_node=$NUM_GPUS_PER_NODE)..."
+for i in $(seq 1 120); do
+    AVAILABLE_GPU=$(python3 -c "import ray; ray.init(); print(int(ray.cluster_resources().get('GPU', 0)))" 2>/dev/null || echo 0)
+    if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
+        echo "Ray cluster ready: $AVAILABLE_GPU GPUs detected after ${i}s"
+        break
+    fi
+    if [ $((i % 10)) -eq 0 ]; then
+        echo "  ${i}s: only $AVAILABLE_GPU/$EXPECTED_GPU GPUs ready..."
+    fi
+    sleep 1
+done
+if [ "$AVAILABLE_GPU" -lt "$EXPECTED_GPU" ]; then
+    echo "ERROR: Only $AVAILABLE_GPU/$EXPECTED_GPU GPUs available after 120s. Worker nodes may not have joined."
+    exit 1
+fi
+
 # --- 3. 训练 (GPU 1, HTTP 连接 WM) ---
 cd $PROJECT_DIR
 conda activate 3spo
