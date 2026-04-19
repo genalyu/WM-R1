@@ -704,8 +704,8 @@ class RayPPOTrainer:
 
         # uid
         # use batch to compute norm reward
-        batch.non_tensor_batch["uid"] = np.array([x['id'] for x in task_configs], dtype=object)
-        batch.non_tensor_batch["task_id"] = np.array([x['id'] for x in task_configs], dtype=object)
+        batch.non_tensor_batch["uid"] = np.array([x['task_id'] for x in task_configs], dtype=object)
+        batch.non_tensor_batch["task_id"] = np.array([x['task_id'] for x in task_configs], dtype=object)
 
         batch.batch["rewards"] = torch.tensor([float(x) for x in eval_result_flatten], dtype=torch.float32)
 
@@ -746,8 +746,8 @@ class RayPPOTrainer:
         final_eval_results = []
         for i in range(bsz):
             cur_task_config = task_configs[i * rollout_n:(i + 1) * rollout_n]
-            assert len(set([x['id'] for x in cur_task_config])) == 1
-            task_id = cur_task_config[0]['id']
+            assert len(set([x['task_id'] for x in cur_task_config])) == 1
+            task_id = cur_task_config[0]['task_id']
             instruction = cur_task_config[0]['instruction']
 
             cur_eval_results = eval_results[i * rollout_n:(i + 1) * rollout_n]
@@ -757,7 +757,7 @@ class RayPPOTrainer:
             cur_reward_std = np.std(cur_rewards)
             cur_reward_mean = np.mean(cur_rewards)
             if cur_reward_std < 0.05 and cur_reward_mean < 0.2: # all negative group
-                pos_batch = self.replay.get_pos(cur_task_config[0]['id'], num_samples=1)
+                pos_batch = self.replay.get_pos(cur_task_config[0]['task_id'], num_samples=1)
             else:
                 pos_batch = []
 
@@ -912,8 +912,8 @@ class RayPPOTrainer:
 
                         batch.batch["eval_results"] = torch.tensor([float(x) for x in eval_results], dtype=torch.float32)
                         batch.batch["format_rewards"] = torch.tensor([float(x) for x in format_rewards], dtype=torch.float32)
-                        batch.non_tensor_batch["uid"] = np.array([x['id'] for x in task_configs], dtype=object)
-                        batch.non_tensor_batch["task_id"] = np.array([x['id'] for x in task_configs], dtype=object)
+                        batch.non_tensor_batch["uid"] = np.array([x['task_id'] for x in task_configs], dtype=object)
+                        batch.non_tensor_batch["task_id"] = np.array([x['task_id'] for x in task_configs], dtype=object)
                         
                     
                     with _timer("replay", timing_raw):
