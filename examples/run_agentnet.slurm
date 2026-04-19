@@ -99,11 +99,11 @@ if ! kill -0 $RAY_HEAD_PID 2>/dev/null; then
     exit 1
 fi
 
-# 等待 GCS 就绪 (用 ray status 探测，Ray 初始化 GPU 可能需要几分钟)
-echo "Waiting for GCS to become available..."
+# 等待 GCS 就绪 (直接探测 6379 端口，Ray 初始化 GPU 可能需要几分钟)
+echo "Waiting for Ray GCS to become available..."
 GCS_READY=0
 for i in $(seq 1 300); do
-    if ray status 2>/dev/null | grep -q "Head"; then
+    if bash -c 'echo > /dev/tcp/127.0.0.1/6379' 2>/dev/null; then
         echo "GCS ready after ${i}s"
         GCS_READY=1
         break
