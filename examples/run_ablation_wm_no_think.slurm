@@ -50,7 +50,7 @@ CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
     --model "$WM_MODEL_PATH" \
     --host 0.0.0.0 \
     --port $WM_PORT \
-    --device cpu \
+    --tensor-parallel-size 1 \
     --max-model-len 8192 \
     --gpu-memory-utilization 0.9 \
     --trust-remote-code &

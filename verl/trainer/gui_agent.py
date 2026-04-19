@@ -9,6 +9,8 @@ from io import BytesIO
 import base64
 import datetime
 import traceback
+import urllib.request
+import traceback
 import torch
 import numpy as np
 import sys
@@ -109,15 +111,12 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
             return np.array(img.convert("RGB"))
 
     def predict_mm(self, prompt, screenshots, idx=0):
-        """Text-only prediction via the vLLM server (for evaluation/judging)."""
-        import urllib.request
-        import json
-
+        """Multimodal prediction via the vLLM server (for evaluation/judging)."""
         # Encode first screenshot to base64
         image = screenshots[0]
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
-        buf = io.BytesIO()
+        buf = BytesIO()
         image.save(buf, format="JPEG")
         image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
