@@ -5,7 +5,6 @@ aiohttp
 aiohttp-cors
 aiosignal
 android-env
-android_world
 annotated-types
 anyio
 attrs

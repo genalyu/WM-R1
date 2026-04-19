@@ -51,6 +51,7 @@ WM_PORT=18889
 
 # --- 每节点启动 WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL ---
 echo "Starting WM server on $(hostname) GPU:0, port $WM_PORT"
+export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
