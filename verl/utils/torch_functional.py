@@ -219,7 +219,7 @@ def postprocess_data(
     if labels is not None:
         return input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw
     else:
-        return input_ids, attention_mask, position_ids, pixel_values, image_grid_thw
+        return input_ids, attention_mask, position_ids, None, pixel_values, image_grid_thw
 
 
 def get_constant_schedule_with_warmup(
