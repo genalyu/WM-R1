@@ -248,7 +248,7 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.6 \
+    worker.rollout.gpu_memory_utilization=0.4 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
