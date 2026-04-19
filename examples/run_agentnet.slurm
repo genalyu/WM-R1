@@ -20,6 +20,14 @@ source ~/.bashrc
 source ~/jyy/anaconda/etc/profile.d/conda.sh
 conda activate 3spo
 
+# 清理所有残留 Ray 状态
+ray stop --force 2>/dev/null || true
+rm -rf /tmp/ray
+rm -rf ~/.config/ray/
+pkill -9 -f raylet 2>/dev/null || true
+pkill -9 -f gcs_server 2>/dev/null || true
+sleep 2
+
 # --- 全局环境变量 ---
 export WANDB_PROJECT="wm-r1"
 export WANDB_MODE="offline"
@@ -72,8 +80,9 @@ export VLLM_HOST_IP=$HEAD_NODE_IP
 # 启动 Ray Head (GPU 1 only, GPU 0 is for WM vLLM)
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 export CUDA_VISIBLE_DEVICES=1
-ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-    --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
+nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+    --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
+    > /tmp/ray_head.log 2>&1 &
 
 echo "Waiting for GCS to become available..."
 for i in $(seq 1 60); do
@@ -155,11 +164,16 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 
 # --- 等待所有 Ray 节点 GPU 就绪 ---
 EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
-echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs (nodes=$NUM_NODES, gpus_per_node=$NUM_GPUS_PER_NODE)..."
+echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
 for i in $(seq 1 120); do
-    AVAILABLE_GPU=$(python3 -c "import ray; ray.init(); print(int(ray.cluster_resources().get('GPU', 0)))" 2>/dev/null || echo 0)
+    GPU_LINE=$(ray status 2>/dev/null | grep "^GPU" || true)
+    AVAILABLE_GPU=0
+    if [ -n "$GPU_LINE" ]; then
+        AVAILABLE_GPU=$(echo "$GPU_LINE" | grep -oP '(\d+)/\1' | head -1 | cut -d'/' -f1 || echo 0)
+        if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
+    fi
     if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
-        echo "Ray cluster ready: $AVAILABLE_GPU GPUs detected after ${i}s"
+        echo "Ray cluster ready: $AVAILABLE_GPU GPUs after ${i}s"
         break
     fi
     if [ $((i % 10)) -eq 0 ]; then
