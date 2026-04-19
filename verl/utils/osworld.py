@@ -162,22 +162,29 @@ class OSWorldTaskConfigDataset(Dataset):
                       os.path.isdir(data_path) # Assume dir might be local AgentNet
 
         if is_agentnet:
-            from datasets import load_dataset
             if "@" in data_path:
                 path, split = data_path.split("@")
             else:
                 path, split = data_path, "train"
-            
+
             if os.path.isdir(path):
-                # Try to load local parquet or jsonl from directory
-                self.dataset = load_dataset("parquet", data_dir=path, split="train")
+                from datasets import load_dataset
+                self.dataset = load_dataset("parquet", data_dir=path, split="train", keep_in_memory=True)
             elif path.endswith(".parquet"):
-                self.dataset = load_dataset("parquet", data_files=path, split="train")
+                from datasets import load_dataset
+                self.dataset = load_dataset("parquet", data_files=path, split="train", keep_in_memory=True)
             elif path.endswith(".jsonl"):
-                self.dataset = load_dataset("json", data_files=path, split="train")
+                # Load JSONL directly without datasets library to avoid filelock issues with Ray
+                self.dataset = []
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            self.dataset.append(json.loads(line))
             else:
                 # Remote HF dataset
-                self.dataset = load_dataset(path, split=split)
+                from datasets import load_dataset
+                self.dataset = load_dataset(path, split=split, keep_in_memory=True)
             self.mode = "agentnet"
         else:
             with open(data_path, "r") as f:

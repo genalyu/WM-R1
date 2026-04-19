@@ -148,6 +148,12 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
 
+# Fix GCC/linker mismatch for Triton JIT compilation
+export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
+export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
+export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
+export CUDA_HOST_COMPILER=$CC
+
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-ablation" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \

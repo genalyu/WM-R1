@@ -149,6 +149,12 @@ export NCCL_P2P_DISABLE=0
 export NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=600
 
+# Fix GCC/linker mismatch for Triton JIT compilation
+export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
+export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
+export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
+export CUDA_HOST_COMPILER=$CC
+
 # 限制线程数，避免 Ray worker 过多导致资源竞争
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
