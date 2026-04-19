@@ -116,6 +116,29 @@ if [ "$GCS_READY" -ne 1 ]; then
     exit 1
 fi
 
+# Give Ray internal services time to fully initialize
+sleep 10
+
+# Wait until Ray Python API is actually usable
+echo "Waiting for Ray Python API to be ready..."
+RAY_API_READY=0
+for i in $(seq 1 120); do
+    if python3 -c "import ray; ray.init(address='auto', ignore_reinit_error=True); print('Ray API ready'); ray.shutdown()" 2>/dev/null; then
+        RAY_API_READY=1
+        break
+    fi
+    if [ $((i % 10)) -eq 0 ]; then
+        echo "Waiting for Ray API... ($i/120s)"
+    fi
+    sleep 1
+done
+if [ "$RAY_API_READY" -ne 1 ]; then
+    echo "ERROR: Ray Python API not ready after 120s."
+    echo "Ray head log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
+
 # 其他节点启动 Ray Worker + WM vLLM 服务
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS + WM servers on other nodes"
