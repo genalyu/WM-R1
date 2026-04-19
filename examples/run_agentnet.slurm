@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
 #SBATCH --partition=a100
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=24
