@@ -54,11 +54,11 @@ echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --num-gpus=2 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
 
-# 等待 GCS 就绪 (直接探测 6379 端口，Ray 初始化 GPU 可能需要几分钟)
-echo "Waiting for Ray GCS to become available..."
+# 等待 GCS 就绪 (Ray 初始化 GPU 可能需要几分钟，超时设为 5 分钟)
+echo "Waiting for GCS to become available..."
 GCS_READY=0
 for i in $(seq 1 300); do
-    if bash -c 'echo > /dev/tcp/127.0.0.1/6379' 2>/dev/null; then
+    if ray healthcheck 2>/dev/null; then
         echo "GCS ready after ${i}s"
         GCS_READY=1
         break
@@ -140,7 +140,7 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=16384 \
+    data.max_prompt_length=8192 \
     data.max_response_length=512 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
@@ -161,7 +161,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.limit_images=16 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
-    worker.rollout.max_num_batched_tokens=18000 \
+    worker.rollout.max_num_batched_tokens=9000 \
     algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
