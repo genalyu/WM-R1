@@ -141,12 +141,17 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
+            rm -rf ~/.config/ray/
+            pkill -9 -f raylet 2>/dev/null || true
+            pkill -9 -f gcs_server 2>/dev/null || true
+            sleep 2
             export CUDA_VISIBLE_DEVICES=1
-            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" &
-            # Wait for worker to join
-            sleep 5
-        ' &
-    sleep 10
+            nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" \
+                > /tmp/ray_worker.log 2>&1 &
+            disown
+            echo "Ray worker started on $(hostname)"
+        '
+    echo "All worker nodes initialized"
 fi
 
 # --- 2. 配置 ---
@@ -166,10 +171,11 @@ VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
 EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
 echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
 for i in $(seq 1 120); do
-    GPU_LINE=$(ray status 2>/dev/null | grep "^GPU" || true)
-    AVAILABLE_GPU=0
-    if [ -n "$GPU_LINE" ]; then
-        AVAILABLE_GPU=$(echo "$GPU_LINE" | grep -oP '(\d+)/\1' | head -1 | cut -d'/' -f1 || echo 0)
+    ray status > /tmp/ray_status.txt 2>/dev/null
+    if [ $? -eq 0 ]; then
+        # Parse GPU count from ray status output
+        # Example: "GPU (0.0-1.0): 2.0/2.0 used"
+        AVAILABLE_GPU=$(grep "^GPU" /tmp/ray_status.txt | head -1 | grep -oP '\d+\.0(?=/)' | head -1 | cut -d'.' -f1)
         if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
     fi
     if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
