@@ -183,25 +183,28 @@ EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
 echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
 AVAILABLE_GPU=0
 for i in $(seq 1 120); do
-    # Use Python to query Ray cluster resources (more reliable than parsing ray status text)
-    AVAILABLE_GPU=$(python3 -c "
-import ray
-try:
-    total = ray.cluster_resources().get('GPU', 0)
-    avail = ray.available_resources().get('GPU', 0)
-    # cluster_resources = total, available_resources = currently free
-    # Use total since we just want to confirm nodes joined
-    print(int(total))
-except Exception:
-    print(0)
-" 2>/dev/null)
+    # Use ray status CLI text parsing with multiple patterns
+    RAY_STATUS=$(ray status 2>/dev/null || true)
+    # Pattern 1: "GPU: X.0/X.0 used"
+    # Pattern 2: "  GPU: 1.0/1.0 (1.0 used) - ..."
+    GPU_LINE=$(echo "$RAY_STATUS" | grep -i "GPU" | head -1)
+    if [ -n "$GPU_LINE" ]; then
+        # Extract total GPU count: look for pattern like "X.0/Y.0" and take Y
+        AVAILABLE_GPU=$(echo "$GPU_LINE" | grep -oP '[0-9]+\.0/[0-9]+\.0' | head -1 | cut -d'/' -f1 | cut -d'.' -f1)
+        TOTAL_GPU=$(echo "$GPU_LINE" | grep -oP '[0-9]+\.0/[0-9]+\.0' | head -1 | cut -d'/' -f2 | cut -d'.' -f1)
+    fi
     if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
+    if [ -z "$TOTAL_GPU" ]; then TOTAL_GPU=0; fi
     if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
-        echo "Ray cluster ready: $AVAILABLE_GPU GPUs after ${i}s"
+        echo "Ray cluster ready: $AVAILABLE_GPU/$TOTAL_GPU GPUs after ${i}s"
         break
     fi
     if [ $((i % 10)) -eq 0 ]; then
-        echo "  ${i}s: only $AVAILABLE_GPU/$EXPECTED_GPU GPUs ready..."
+        echo "  ${i}s: only $AVAILABLE_GPU/$TOTAL_GPU GPUs available ($EXPECTED_GPU expected)..."
+        echo "    GPU line: $GPU_LINE"
+    fi
+    sleep 1
+done
     fi
     sleep 1
 done
