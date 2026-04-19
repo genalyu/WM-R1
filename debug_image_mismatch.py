@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, default='/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl', required=True, help="Path to JSONL data file")
     parser.add_argument("--model-path", type=str, default='/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct', required=True, help="Path to Qwen2.5-VL model")
-    parser.add_argument("--image-dir", type=str, required=True,default='/public/home/xlwang/genalyu/dataset/agentnet/images',
+    parser.add_argument("--image-dir", type=str, required=True,default='/public/home/xlwang/genalyu/dataset/agentnet',
                         help="Directory where screenshot images are stored")
     parser.add_argument("--num-samples", type=int, default=5, help="Number of samples to check")
     parser.add_argument("--max-pixels", type=int, default=768 * 768)
@@ -144,45 +144,16 @@ def main():
         prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
         # ---- Method A: processor with do_resize=False ----
-        print(f"\n  --- Method A: processor(do_resize=False) ---")
-        try:
-            model_inputs_a = processor(
-                [processed], [prompt],
-                add_special_tokens=False,
-                return_tensors="pt",
-                do_resize=False,
-            )
-        except TypeError:
-            print("    do_resize kwarg NOT supported by this processor version")
-            model_inputs_a = processor(
-                [processed], [prompt],
-                add_special_tokens=False,
-                return_tensors="pt",
-            )
-
-        grid_a = model_inputs_a["image_grid_thw"]
-        pixels_a = model_inputs_a["pixel_values"]
-        expected_a = compute_expected_tokens_from_grid(grid_a, merge_size)
-        print(f"    image_grid_thw: {grid_a.tolist()}")
-        print(f"    pixel_values shape: {pixels_a.shape}")
-        print(f"    Expected tokens from grid_thw: {expected_a}")
-        if pixels_a.dim() == 4:
-            actual_a = pixels_a.shape[2]  # num_patches
-            print(f"    Actual tokens (from pixel_values num_patches): {actual_a}")
-        else:
-            actual_a = pixels_a.shape[0]
-            print(f"    Actual tokens (flat): {actual_a}")
-        mismatch_a = expected_a != actual_a
-        print(f"    Mismatch: {mismatch_a}")
+        # Skipped: transformers 4.51.0 has a bug with do_resize=False
+        print(f"\n  --- Method A: SKIPPED (do_resize=False not supported in 4.51.0) ---")
 
         # ---- Method B: processor with default behavior ----
-        print(f"\n  --- Method B: processor (default, do_resize=True) ---")
+        print(f"\n  --- Method B: processor (default behavior) ---")
         try:
             model_inputs_b = processor(
                 [processed], [prompt],
                 add_special_tokens=False,
                 return_tensors="pt",
-                do_resize=True,
             )
         except TypeError:
             print("    do_resize kwarg NOT supported, using default")
@@ -209,11 +180,8 @@ def main():
 
         # ---- Forward pass ----
         print(f"\n  --- Forward pass test ---")
-        # Use the method that didn't mismatch for forward
-        use_grid = grid_b if not mismatch_b else grid_a
-        use_pixels = pixels_b if not mismatch_b else pixels_a
-        label = "B" if not mismatch_b else "A"
-        print(f"    Using Method {label} inputs")
+        use_grid = grid_b
+        use_pixels = pixels_b
 
         try:
             visual = model.visual
@@ -262,13 +230,13 @@ def main():
         print(f"\nDiagnosis:")
         if num_mismatches > 0:
             print(f"  -> image_grid_thw 和 pixel_values 不匹配")
-            print(f"  -> 大概率是 processor 内部 resize 和自定义 resize 冲突")
+            print(f"  -> 可能是 processor 内部 resize 和自定义 resize 冲突")
         if num_crashes > 0:
             print(f"  -> transformers 库 visual encoder forward 直接 crash")
             print(f"  -> 可能是 transformers 版本 bug")
         print(f"\nRecommendation:")
-        print(f"  1. 在 processor 调用时加 do_resize=False")
-        print(f"  2. 或者统一 resize 逻辑，只用一处 resize")
+        print(f"  1. 移除 ImageProcessMixin，完全交给 processor 内部 resize")
+        print(f"  2. 或者确保 ImageProcessMixin 输出的尺寸是 14 的倍数")
     else:
         print(f"\nAll samples OK. Crash may be triggered by a specific edge-case image.")
 
