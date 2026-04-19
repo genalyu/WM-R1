@@ -116,21 +116,7 @@ if [ "$GCS_READY" -ne 1 ]; then
     exit 1
 fi
 
-# 关键诊断: 检查 GCS 绑定在哪个 IP 上
-echo "=== GCS bind address check ==="
-ss -tlnp | grep 6379 || echo "ss failed or port 6379 not found"
-# 如果输出显示 127.0.0.1:6379 而不是 0.0.0.0:6379 或 10.11.200.15:6379，
-# 说明 GCS 只绑定了 localhost，worker 节点无法连接
-
 # 其他节点启动 Ray Worker + WM vLLM 服务
-sleep 5
-
-echo "=== Node info ==="
-echo "SLURM_JOB_NUM_NODES=$SLURM_JOB_NUM_NODES"
-echo "Current hostname=$(hostname)"
-echo "SLURM_NODELIST=$SLURM_NODELIST"
-echo "HEAD_NODE_IP=$HEAD_NODE_IP"
-
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS + WM servers on other nodes"
 
@@ -192,21 +178,6 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
 else
     echo "Single-node job, skipping worker node setup"
 fi
-
-# 等待所有节点加入 Ray 集群
-EXPECTED_NODES=$SLURM_JOB_NUM_NODES
-echo "Waiting for all $EXPECTED_NODES nodes to join Ray cluster..."
-for i in $(seq 1 120); do
-    NODE_COUNT=$(ray list nodes 2>/dev/null | python3 -c "import sys,json; nodes=json.load(sys.stdin); print(len(nodes))" 2>/dev/null || echo "0")
-    if [ "$NODE_COUNT" -ge "$EXPECTED_NODES" ] 2>/dev/null; then
-        echo "All $EXPECTED_NODES nodes joined after ${i}s"
-        break
-    fi
-    if [ $((i % 10)) -eq 0 ]; then
-        echo "Waiting... ($i/120s, currently $NODE_COUNT/$EXPECTED_NODES nodes)"
-    fi
-    sleep 1
-done
 
 # --- 2. 配置 ---
 EXPERIMENT_NAME="wm_r1"
