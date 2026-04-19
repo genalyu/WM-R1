@@ -264,7 +264,7 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=8192 \
+    data.max_prompt_length=16384 \
     data.max_response_length=512 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
@@ -285,7 +285,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=9000 \
+    worker.rollout.max_num_batched_tokens=18000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
