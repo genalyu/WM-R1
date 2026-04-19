@@ -185,7 +185,8 @@ def main():
 
         try:
             visual = model.visual
-            device = visual.get_device()
+            # Get device from a parameter buffer since get_device() may not exist
+            device = next(visual.parameters()).device
 
             # pixel_values shape: [1, channels, num_patches, patch_dim]
             # Flatten to [num_patches, patch_dim] for visual encoder
