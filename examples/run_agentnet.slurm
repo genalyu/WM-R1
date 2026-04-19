@@ -116,6 +116,12 @@ if [ "$GCS_READY" -ne 1 ]; then
     exit 1
 fi
 
+# 关键诊断: 检查 GCS 绑定在哪个 IP 上
+echo "=== GCS bind address check ==="
+ss -tlnp | grep 6379 || echo "ss failed or port 6379 not found"
+# 如果输出显示 127.0.0.1:6379 而不是 0.0.0.0:6379 或 10.11.200.15:6379，
+# 说明 GCS 只绑定了 localhost，worker 节点无法连接
+
 # 其他节点启动 Ray Worker + WM vLLM 服务
 sleep 5
 
@@ -123,12 +129,14 @@ echo "=== Node info ==="
 echo "SLURM_JOB_NUM_NODES=$SLURM_JOB_NUM_NODES"
 echo "Current hostname=$(hostname)"
 echo "SLURM_NODELIST=$SLURM_NODELIST"
+echo "HEAD_NODE_IP=$HEAD_NODE_IP"
 
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS + WM servers on other nodes"
 
-    # Launch worker node initialization via srun
-    srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
+    # Launch worker node initialization via srun (foreground — blocks until workers finish setup)
+    echo "Launching srun for worker nodes..."
+    srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks-per-node=1 --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
         bash -c '
             echo "[$(hostname)] Worker node srun started"
             source ~/.bashrc
@@ -148,7 +156,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export PROJECT_DIR='"$PROJECT_DIR"'
             export WM_MODEL_PATH='"$WM_MODEL_PATH"'
 
-            # WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL
+            # WM 服务 (GPU 0)
             WM_PORT=18888
             echo "[$(hostname)] Starting WM server on GPU:0"
             export CONDA_PREFIX=""
@@ -161,7 +169,6 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 --port $WM_PORT \
                 --device cuda:0 > /tmp/wm_server_worker.log 2>&1 &
             sleep 10
-            # Wait for WM server to become available
             echo "[$(hostname)] Waiting for WM server..."
             for i in $(seq 1 120); do
                 if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
@@ -170,21 +177,36 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 fi
                 sleep 1
             done
-            # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
+
+            # Ray Worker (GPU 1 only)
             echo "[$(hostname)] Starting Ray worker..."
             ray stop --force 2>/dev/null || true
             sleep 2
+            WORKER_IP=$(hostname -I | awk "{print \$1}")
+            echo "[$(hostname)] Worker IP: $WORKER_IP, connecting to head: $HEAD_NODE_IP:6379"
             export CUDA_VISIBLE_DEVICES=1
-            nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" \
-                > /tmp/ray_worker.log 2>&1 &
-            sleep 5
-            echo "[$(hostname)] Ray worker started"
-        ' &
-    # Don't wait for srun - let it run in background
-    echo "Worker node srun launched in background"
+            ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$WORKER_IP\": 128}" 2>&1 | tee /tmp/ray_worker_connect.log
+            echo "[$(hostname)] Ray start finished, exit code: $?"
+        '
+    echo "All worker nodes initialized"
 else
     echo "Single-node job, skipping worker node setup"
 fi
+
+# 等待所有节点加入 Ray 集群
+EXPECTED_NODES=$SLURM_JOB_NUM_NODES
+echo "Waiting for all $EXPECTED_NODES nodes to join Ray cluster..."
+for i in $(seq 1 120); do
+    NODE_COUNT=$(ray list nodes 2>/dev/null | python3 -c "import sys,json; nodes=json.load(sys.stdin); print(len(nodes))" 2>/dev/null || echo "0")
+    if [ "$NODE_COUNT" -ge "$EXPECTED_NODES" ] 2>/dev/null; then
+        echo "All $EXPECTED_NODES nodes joined after ${i}s"
+        break
+    fi
+    if [ $((i % 10)) -eq 0 ]; then
+        echo "Waiting... ($i/120s, currently $NODE_COUNT/$EXPECTED_NODES nodes)"
+    fi
+    sleep 1
+done
 
 # --- 2. 配置 ---
 EXPERIMENT_NAME="wm_r1"
@@ -198,30 +220,6 @@ NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rol
 
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
-
-# --- 诊断: 检查 Ray head 状态 ---
-echo "=== Ray head log (last 30 lines) ==="
-tail -30 /tmp/ray_head.log 2>/dev/null || echo "ray_head.log not found"
-
-echo "=== nvidia-smi ==="
-nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader
-
-echo "=== ray nodes ==="
-ray list nodes 2>/dev/null || echo "ray list nodes failed"
-
-echo "=== ray status (full) ==="
-ray status 2>/dev/null || echo "ray status failed"
-
-# --- 等待 Ray 集群就绪 ---
-echo "Waiting for Ray cluster to stabilize..."
-sleep 200
-
-# Diagnostic: show what Ray sees
-echo "=== ray status ==="
-ray status 2>&1 || echo "(ray status failed)"
-
-echo "=== ray head log (last 10 lines) ==="
-tail -10 /tmp/ray_head.log 2>/dev/null || echo "(no log)"
 
 # --- 3. 训练 (GPU 1, HTTP 连接 WM) ---
 cd $PROJECT_DIR
