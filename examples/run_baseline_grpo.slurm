@@ -36,18 +36,23 @@ export PROJECT_DIR
 export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1
 
 # --- 启动 Ray 集群 (多节点支持) ---
-# 先清理残留进程
+# 先彻底清理残留进程
 ray stop --force 2>/dev/null || true
 rm -rf /tmp/ray
+# 确保没有残留的 raylet 或 gcs 进程
+pkill -9 raylet 2>/dev/null || true
+pkill -9 gcs_server 2>/dev/null || true
+pkill -9 ray 2>/dev/null || true
+sleep 2
 
-# --- 启动 Ray 集群 (多节点支持) ---
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
+# 后台启动 Ray head（不用 --block 避免阻塞，不用 --daemonize 避免 crash 无日志）
 ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-    --resources="{\"docker:$HEAD_NODE_IP\": 128}" --block &
+    --num-gpus=2 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
 
 # 等待 GCS 就绪 (主动探测，不等死 sleep)
 echo "Waiting for GCS to become available..."
