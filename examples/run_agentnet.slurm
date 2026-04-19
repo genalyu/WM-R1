@@ -93,10 +93,19 @@ done
 
 # 其他节点启动 Ray Worker + WM vLLM 服务
 sleep 5
+
+echo "=== Node info ==="
+echo "SLURM_JOB_NUM_NODES=$SLURM_JOB_NUM_NODES"
+echo "Current hostname=$(hostname)"
+echo "SLURM_NODELIST=$SLURM_NODELIST"
+
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS + WM servers on other nodes"
+
+    # Launch worker node initialization via srun
     srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
         bash -c '
+            echo "[$(hostname)] Worker node srun started"
             source ~/.bashrc
             source ~/jyy/anaconda/etc/profile.d/conda.sh
             conda activate 3spo
@@ -116,7 +125,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
 
             # WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL
             WM_PORT=18888
-            echo "Starting WM server on $(hostname) GPU:0"
+            echo "[$(hostname)] Starting WM server on GPU:0"
             export CONDA_PREFIX=""
             eval "$(conda shell.bash hook)"
             conda activate wm
@@ -125,31 +134,31 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
                 --model $WM_MODEL_PATH \
                 --port $WM_PORT \
-                --device cuda:0 &
+                --device cuda:0 > /tmp/wm_server_worker.log 2>&1 &
             sleep 10
             # Wait for WM server to become available
-            echo "Waiting for WM server on $(hostname)..."
+            echo "[$(hostname)] Waiting for WM server..."
             for i in $(seq 1 120); do
                 if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
-                    echo "WM server on $(hostname) ready after ${i}s"
+                    echo "[$(hostname)] WM server ready after ${i}s"
                     break
                 fi
                 sleep 1
             done
             # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
+            echo "[$(hostname)] Starting Ray worker..."
             ray stop --force 2>/dev/null || true
-            rm -rf /tmp/ray
-            rm -rf ~/.config/ray/
-            pkill -9 -f raylet 2>/dev/null || true
-            pkill -9 -f gcs_server 2>/dev/null || true
             sleep 2
             export CUDA_VISIBLE_DEVICES=1
             nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" \
                 > /tmp/ray_worker.log 2>&1 &
-            disown
-            echo "Ray worker started on $(hostname)"
-        '
-    echo "All worker nodes initialized"
+            sleep 5
+            echo "[$(hostname)] Ray worker started"
+        ' &
+    # Don't wait for srun - let it run in background
+    echo "Worker node srun launched in background"
+else
+    echo "Single-node job, skipping worker node setup"
 fi
 
 # --- 2. 配置 ---
