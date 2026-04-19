@@ -50,15 +50,24 @@ export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
-# 后台启动 Ray head（不用 --block 避免阻塞，不用 --daemonize 避免 crash 无日志）
-ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-    --num-gpus=2 --resources="{\"docker:$HEAD_NODE_IP\": 128}" &
+nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+    --num-gpus=2 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
+    > /tmp/ray_head.log 2>&1 &
+RAY_HEAD_PID=$!
+echo "Ray head process PID: $RAY_HEAD_PID"
 
-# 等待 GCS 就绪 (Ray 初始化 GPU 可能需要几分钟，超时设为 5 分钟)
+sleep 3
+if ! kill -0 $RAY_HEAD_PID 2>/dev/null; then
+    echo "ERROR: ray start process exited immediately. Log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
+
+# 等待 GCS 就绪 (直接探测 6379 端口，Ray 初始化 GPU 可能需要几分钟)
 echo "Waiting for GCS to become available..."
 GCS_READY=0
 for i in $(seq 1 300); do
-    if ray healthcheck 2>/dev/null; then
+    if bash -c 'echo > /dev/tcp/127.0.0.1/6379' 2>/dev/null; then
         echo "GCS ready after ${i}s"
         GCS_READY=1
         break
