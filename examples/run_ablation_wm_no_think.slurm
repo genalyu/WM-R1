@@ -55,8 +55,8 @@ export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
 cd $PROJECT_DIR
-CUDA_VISIBLE_DEVICES=0 python "$PROJECT_DIR/Code2World/android_world/agents/wm_server.py" \
-    --model "$WM_MODEL_PATH" \
+CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
+    --model $WM_MODEL_PATH \
     --port $WM_PORT \
     --device cuda:0 &
 sleep 10
@@ -111,6 +111,8 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
             export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
+            export PROJECT_DIR='"$PROJECT_DIR"'
+            export WM_MODEL_PATH='"$WM_MODEL_PATH"'
 
             # WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL
             WM_PORT=18889
@@ -118,10 +120,10 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export CONDA_PREFIX=""
             eval "$(conda shell.bash hook)"
             conda activate wm
-            export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
-            cd '"$PROJECT_DIR"'
-            CUDA_VISIBLE_DEVICES=0 python '"$PROJECT_DIR"'/Code2World/android_world/agents/wm_server.py \
-                --model '"$WM_MODEL_PATH"' \
+            export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
+            cd $PROJECT_DIR
+            CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
+                --model $WM_MODEL_PATH \
                 --port $WM_PORT \
                 --device cuda:0 &
             sleep 10
