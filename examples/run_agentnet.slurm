@@ -4,8 +4,8 @@
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=48
-#SBATCH --mem=300G
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=330G
 #SBATCH --output=logs/agentnet_%j.out
 #SBATCH --error=logs/agentnet_%j.err
 
