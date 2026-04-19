@@ -98,7 +98,7 @@ def main():
 
     if not ray.is_initialized():
         # this is for local ray cluster
-        ray.init(address="auto", runtime_env={"env_vars": {
+        ray.init(address="localhost:6379", runtime_env={"env_vars": {
             "TOKENIZERS_PARALLELISM": "false",
             "NCCL_DEBUG": "WARN",
             "HF_HUB_OFFLINE": "1",
