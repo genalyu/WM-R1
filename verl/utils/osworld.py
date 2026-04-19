@@ -49,6 +49,23 @@ SYSTEM_MESSAGE = "You are a helpful assistant."
 def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
     return features
 
+def _pad_tensors_to_max_len(tensor_list: List[torch.Tensor], pad_value: int = 0) -> List[torch.Tensor]:
+    """Pad a list of 1D/2D tensors to the same length along the last dimension."""
+    if len(tensor_list) <= 1:
+        return tensor_list
+    max_len = max(t.shape[-1] for t in tensor_list)
+    padded = []
+    for t in tensor_list:
+        if t.shape[-1] < max_len:
+            pad_shape = list(t.shape)
+            pad_shape[-1] = max_len - t.shape[-1]
+            pad_tensor = torch.full(pad_shape, fill_value=pad_value, dtype=t.dtype, device=t.device)
+            padded.append(torch.cat((t, pad_tensor), dim=-1))
+        else:
+            padded.append(t)
+    return padded
+
+
 def collate_fn_dataproto(features: List[Dict[str, Any]]) -> Dict[str, Any]:
     tensors = defaultdict(list)
     non_tensors = defaultdict(list)
@@ -60,6 +77,13 @@ def collate_fn_dataproto(features: List[Dict[str, Any]]) -> Dict[str, Any]:
                 non_tensors[key].append(value)
 
     for key, value in tensors.items():
+        # Pad sequence tensors to the same length before stacking
+        if key in ("input_ids", "labels", "attention_mask"):
+            pad_value = -100 if key == "labels" else 0
+            value = _pad_tensors_to_max_len(value, pad_value)
+        elif key == "position_ids":
+            # position_ids has shape (3, seq_len) - pad along last dim
+            value = _pad_tensors_to_max_len(value, pad_value=0)
         tensors[key] = torch.stack(value, dim=0)
 
     for key, value in non_tensors.items():
@@ -83,6 +107,11 @@ def collate_fn_fake(features_list):
                 non_tensors[key].append(value)
 
     for key, value in tensors.items():
+        if key in ("input_ids", "labels", "attention_mask"):
+            pad_value = -100 if key == "labels" else 0
+            value = _pad_tensors_to_max_len(value, pad_value)
+        elif key == "position_ids":
+            value = _pad_tensors_to_max_len(value, pad_value=0)
         tensors[key] = torch.stack(value, dim=0)
 
     for key, value in non_tensors.items():

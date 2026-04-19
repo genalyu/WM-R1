@@ -83,7 +83,7 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
             data=req_data,
             headers={"Content-Type": "application/json"},
         )
-        resp = self._urlopen(req, timeout=300)
+        resp = urllib.request.urlopen(req, timeout=300)
         result = json.loads(resp.read())
 
         output_text = result["choices"][0]["message"]["content"]
@@ -107,6 +107,43 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
 
         with Image.open(png_path) as img:
             return np.array(img.convert("RGB"))
+
+    def predict_mm(self, prompt, screenshots, idx=0):
+        """Text-only prediction via the vLLM server (for evaluation/judging)."""
+        import urllib.request
+        import json
+
+        # Encode first screenshot to base64
+        image = screenshots[0]
+        if not isinstance(image, Image.Image):
+            image = Image.fromarray(image)
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        payload = {
+            "model": "default",
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                    {"type": "text", "text": prompt},
+                ]},
+            ],
+            "max_tokens": 4096,
+            "temperature": 0.0,
+        }
+
+        req_data = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            f"{self.base_url}/v1/chat/completions",
+            data=req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        resp = urllib.request.urlopen(req, timeout=300)
+        result = json.loads(resp.read())
+
+        output_text = result["choices"][0]["message"]["content"]
+        return output_text, None, None
 
 
 class WorldModelEnv:
