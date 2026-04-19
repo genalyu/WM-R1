@@ -48,19 +48,16 @@ export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/
 WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
 WM_PORT=18888
 
-# --- 每节点启动 vLLM WM 服务 (GPU 0) ---
-echo "Starting WM vLLM server on $(hostname) GPU:0, port $WM_PORT"
+# --- 每节点启动 WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL ---
+echo "Starting WM server on $(hostname) GPU:0, port $WM_PORT"
 export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
-CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+cd $PROJECT_DIR
+CUDA_VISIBLE_DEVICES=0 python "$PROJECT_DIR/Code2World/android_world/agents/wm_server.py" \
     --model "$WM_MODEL_PATH" \
-    --host 0.0.0.0 \
     --port $WM_PORT \
-    --tensor-parallel-size 1 \
-    --max-model-len 8192 \
-    --gpu-memory-utilization 0.9 \
-    --trust-remote-code &
+    --device cuda:0 &
 sleep 10
 export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
 echo "WM server URL: $WM_HTTP_URL"
@@ -114,20 +111,18 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export VLLM_HOST_IP=$HEAD_NODE_IP
             export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
 
-            # WM vLLM 服务 (GPU 0)
+            # WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL
             WM_PORT=18888
-            echo "Starting WM vLLM server on $(hostname) GPU:0"
+            echo "Starting WM server on $(hostname) GPU:0"
             export CONDA_PREFIX=""
             eval "$(conda shell.bash hook)"
             conda activate wm
-            CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+            export PYTHONPATH=$PYTHONPATH:'"$PROJECT_DIR"'/Code2World
+            cd '"$PROJECT_DIR"'
+            CUDA_VISIBLE_DEVICES=0 python '"$PROJECT_DIR"'/Code2World/android_world/agents/wm_server.py \
                 --model '"$WM_MODEL_PATH"' \
-                --host 0.0.0.0 \
                 --port $WM_PORT \
-                --tensor-parallel-size 1 \
-                --max-model-len 8192 \
-                --gpu-memory-utilization 0.9 \
-                --trust-remote-code &
+                --device cuda:0 &
             sleep 10
             # Wait for WM server to become available
             echo "Waiting for WM server on $(hostname)..."

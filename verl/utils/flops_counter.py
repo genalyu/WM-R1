@@ -73,6 +73,7 @@ class FlopsCounter:
             "qwen2": self._estimate_llama_flops,
             "qwen2_vl": self._estimate_llama_flops,
             "qwen2_5_vl": self._estimate_llama_flops,
+            "qwen3_vl": self._estimate_llama_flops,
         }
         self.config = config
 
@@ -81,7 +82,7 @@ class FlopsCounter:
 
     def _estimate_llama_flops(self, tokens_sum: int, batch_seqlens: List[int], delta_time: float) -> float:
         hidden_size = self.config.hidden_size
-        vocab_size = self.config.vocab_size
+        vocab_size = getattr(self.config, "vocab_size", None) or getattr(self.config.text_config, "vocab_size", 151936)
         num_hidden_layers = self.config.num_hidden_layers
         num_key_value_heads = self.config.num_key_value_heads
         num_attention_heads = self.config.num_attention_heads

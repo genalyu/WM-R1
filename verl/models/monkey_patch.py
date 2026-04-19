@@ -22,12 +22,18 @@ from .transformers.qwen2_vl import qwen2_vl_attn_forward, qwen_2_mixed_modality_
 def apply_ulysses_patch(model_type: str) -> None:
     if model_type in ("llama", "gemma", "gemma2", "mistral", "qwen2"):
         ALL_ATTENTION_FUNCTIONS["flash_attention_2"] = flash_attention_forward
-    elif model_type in ("qwen2_vl", "qwen2_5_vl"):
+    elif model_type in ("qwen2_vl", "qwen2_5_vl", "qwen3_vl"):
         from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLFlashAttention2
         from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLFlashAttention2
 
         Qwen2VLFlashAttention2.forward = qwen2_vl_attn_forward
         Qwen2_5_VLFlashAttention2.forward = qwen2_vl_attn_forward
+
+        try:
+            from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLFlashAttention2
+            Qwen3VLFlashAttention2.forward = qwen2_vl_attn_forward
+        except ImportError:
+            pass  # older transformers versions don't have qwen3_vl
 
         # from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLForConditionalGeneration
         # Qwen2VLForConditionalGeneration.forward = qwen_2_mixed_modality_forward
