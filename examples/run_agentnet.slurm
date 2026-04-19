@@ -26,6 +26,9 @@ rm -rf /tmp/ray
 rm -rf ~/.config/ray/
 pkill -9 -f raylet 2>/dev/null || true
 pkill -9 -f gcs_server 2>/dev/null || true
+# Kill any leftover Redis that might hold port 6379
+fuser -k 6379/tcp 2>/dev/null || true
+pkill -9 -f redis 2>/dev/null || true
 sleep 2
 
 # --- 全局环境变量 ---
@@ -75,12 +78,26 @@ HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
+# 额外清理：确保 Redis/端口 6379 没被占用
+fuser -k 6379/tcp 2>/dev/null || true
+sleep 1
+
 # 启动 Ray Head (GPU 1 only, GPU 0 is for WM vLLM)
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 export CUDA_VISIBLE_DEVICES=1
 nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
     > /tmp/ray_head.log 2>&1 &
+RAY_HEAD_PID=$!
+echo "Ray head process PID: $RAY_HEAD_PID"
+
+# 等几秒后检查进程是否还活着
+sleep 3
+if ! kill -0 $RAY_HEAD_PID 2>/dev/null; then
+    echo "ERROR: ray start process exited immediately. Log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
 
 # 等待 GCS 就绪 (主动探测，超时退出)
 echo "Waiting for GCS to become available..."
