@@ -85,13 +85,34 @@ class DataParallelPPOActor(BasePPOActor):
             if "pixel_values" in multi_modal_inputs and "image_grid_thw" in multi_modal_inputs:
                 pv = multi_modal_inputs["pixel_values"]
                 grid = multi_modal_inputs["image_grid_thw"]
-                merge_size = 2
-                expected_tokens = sum(t * (h // merge_size) * (w // merge_size) for t, h, w in grid.tolist())
-                actual_patches = pv.shape[0]
-                expected_patches = expected_tokens * (merge_size ** 2)
-                if actual_patches != expected_patches:
-                    print(f"[DEBUG] pixel_values mismatch! actual_patches={actual_patches}, expected_patches={expected_patches}, expected_tokens={expected_tokens}")
-                    print(f"[DEBUG] image_grid_thw={grid.tolist()}, pixel_values.shape={pv.shape}")
+                if grid.numel() > 0 and pv.numel() > 0:
+                    merge_size = 2
+                    expected_tokens = sum(t * (h // merge_size) * (w // merge_size) for t, h, w in grid.tolist())
+                    actual_patches = pv.shape[0]
+                    expected_patches = expected_tokens * (merge_size ** 2)
+                    if actual_patches != expected_patches:
+                        raise ValueError(
+                            f"pixel_values/image_grid_thw mismatch: actual_patches={actual_patches}, "
+                            f"expected_patches={expected_patches}, expected_tokens={expected_tokens}, "
+                            f"image_grid_thw={grid.tolist()}, pixel_values.shape={pv.shape}"
+                        )
+                    # Also validate image token count in input_ids
+                    image_token_id = 151655  # Qwen2-VL image token ID
+                    n_image_tokens = (input_ids == image_token_id).sum().item()
+                    if n_image_tokens != expected_tokens:
+                        raise ValueError(
+                            f"Image token count mismatch: input_ids has {n_image_tokens} image tokens, "
+                            f"but image_grid_thw expects {expected_tokens}. "
+                            f"input_ids.shape={input_ids.shape}, image_grid_thw={grid.tolist()}"
+                        )
+                elif grid.numel() == 0 and pv.numel() == 0:
+                    # Both empty — no images, that's fine
+                    pass
+                else:
+                    raise ValueError(
+                        f"Inconsistent multimodal inputs: pixel_values.numel={pv.numel()}, "
+                        f"image_grid_thw.numel={grid.numel()}"
+                    )
 
         if self.config.padding_free:
             input_ids_rmpad, indices, *_ = unpad_input(

@@ -143,15 +143,34 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             row_dict["multi_modal_data"] = {"image": images}
-            row_dict["multi_modal_inputs"] = dict(model_inputs)
 
             # qwen2vl mrope
-            position_ids = get_rope_index(
-                self.processor,
+            image_token_id = self.processor.tokenizer.convert_tokens_to_ids("<|image_pad|>")
+            input_ids, attention_mask, position_ids, _, adjusted_pixel_values, adjusted_grid_thw = VF.postprocess_data(
                 input_ids=input_ids,
-                image_grid_thw=model_inputs["image_grid_thw"],
                 attention_mask=attention_mask,
-            )  # (3, seq_length)
+                position_ids=get_rope_index(
+                    self.processor,
+                    input_ids=input_ids,
+                    image_grid_thw=model_inputs["image_grid_thw"],
+                    attention_mask=attention_mask,
+                ),  # (3, seq_length)
+                max_length=self.max_prompt_length,
+                pad_token_id=self.tokenizer.pad_token_id,
+                left_pad=True,
+                truncation=self.truncation,
+                image_token_id=image_token_id,
+                pixel_values=model_inputs.get("pixel_values"),
+                image_grid_thw=model_inputs.get("image_grid_thw"),
+            )
+            # Store adjusted multimodal inputs (may be truncated if prompt was too long)
+            row_dict["multi_modal_inputs"] = {
+                "pixel_values": adjusted_pixel_values,
+                "image_grid_thw": adjusted_grid_thw,
+            }
+            row_dict["input_ids"] = input_ids
+            row_dict["attention_mask"] = attention_mask
+            row_dict["position_ids"] = position_ids
         else:
             messages = [{"role": "user", "content": prompt_str}]
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
@@ -160,18 +179,18 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             attention_mask = model_inputs.pop("attention_mask")[0]
             position_ids = torch.clip(attention_mask.cumsum(dim=0) - 1, min=0, max=None)  # (seq_length,)
 
-        input_ids, attention_mask, position_ids, _, _, _ = VF.postprocess_data(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            max_length=self.max_prompt_length,
-            pad_token_id=self.tokenizer.pad_token_id,
-            left_pad=True,
-            truncation=self.truncation,
-        )
-        row_dict["input_ids"] = input_ids
-        row_dict["attention_mask"] = attention_mask
-        row_dict["position_ids"] = position_ids
+            input_ids, attention_mask, position_ids, _, _, _ = VF.postprocess_data(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                max_length=self.max_prompt_length,
+                pad_token_id=self.tokenizer.pad_token_id,
+                left_pad=True,
+                truncation=self.truncation,
+            )
+            row_dict["input_ids"] = input_ids
+            row_dict["attention_mask"] = attention_mask
+            row_dict["position_ids"] = position_ids
         row_dict["raw_prompt_ids"] = self.tokenizer.encode(prompt, add_special_tokens=False)
         row_dict["ground_truth"] = row_dict.pop(self.answer_key)
         return row_dict
