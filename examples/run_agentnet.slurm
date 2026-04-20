@@ -244,9 +244,8 @@ export OMP_NUM_THREADS=4
 # Ensure Ray Python API can auto-detect the cluster
 export RAY_ADDRESS="$HEAD_NODE_IP:6379"
 
-# Pre-flight GCS health check (must use same env that started Ray head: wm)
+# Pre-flight GCS health check
 echo "Pre-flight GCS health check..."
-conda activate wm
 if ray status > /tmp/ray_preflight_status.txt 2>&1; then
     echo "GCS healthy. Cluster resources:"
     grep -E "^GPU|^CPU|^Memory" /tmp/ray_preflight_status.txt || true
@@ -271,7 +270,6 @@ else
         sleep 1
     done
 fi
-conda activate 3spo
 
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
