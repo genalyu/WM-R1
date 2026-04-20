@@ -151,7 +151,7 @@ class WMHandler(BaseHTTPRequestHandler):
 
         generated_ids = self.model.generate(
             **inputs,
-            max_new_tokens=max_tokens,
+            max_new_tokens=safe_max_tokens,
             temperature=temperature,
             do_sample=temperature > 0,
         )
@@ -163,7 +163,10 @@ class WMHandler(BaseHTTPRequestHandler):
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        return output_text.strip()
+        # Explicitly clear KV cache to avoid memory accumulation across requests
+        if hasattr(self.model, "past_key_values") and self.model.past_key_values is not None:
+            self.model.past_key_values = None
+        torch.cuda.empty_cache()
 
     # Legacy endpoint for backward compatibility
     def do_POST_legacy(self):
@@ -238,10 +241,17 @@ if __name__ == "__main__":
 
     print(f"Loading Qwen3-VL from {args.model}...")
     WMHandler.processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
+
+    # Limit GPU memory to avoid OOM from large KV cache during generation
+    total_mem = torch.cuda.get_device_properties(0).total_memory
+    max_memory = {0: int(total_mem * args.gpu_memory_utilization)}
+    print(f"GPU memory limit: {max_memory[0] / 1e9:.1f} GB ({args.gpu_memory_utilization:.0%} of {total_mem / 1e9:.1f} GB)")
+
     WMHandler.model = Qwen3VLForConditionalGeneration.from_pretrained(
         args.model,
         device_map=args.device,
         trust_remote_code=True,
+        max_memory=max_memory,
     )
     print("Model loaded.")
 
