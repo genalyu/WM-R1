@@ -14,7 +14,6 @@ import traceback
 import torch
 import numpy as np
 import sys
-from qwen_vl_utils import process_vision_info
 
 # Add Code2World to path to import wm_utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../Code2World'))
@@ -946,69 +945,40 @@ class EnvWorker():
         raise ValueError(f"Unknown content type: {content}")
     
     def process_message(self, message):
-        tokenizer = self.tokenizer
         processor = self.processor
-        
-        image_inputs, video_inputs, video_kwargs = process_vision_info(
-            message, return_video_kwargs=True)
 
-        input_ids = []
-        labels = []
-        attention_mask = []
+        # Pass messages directly to processor — it extracts images internally
+        # with consistent min_pixels/max_pixels. The old approach of calling
+        # process_vision_info separately caused a resize mismatch because
+        # process_vision_info used min/max_pixels from the content dict (3136/2116800)
+        # while the processor used its own defaults (50176/1003520 for Qwen2.5-VL).
+        result = processor(message, return_tensors="pt")
 
-        image_count = 0
-        pixel_values = []
-        image_grid_thw = []
-        for msg in message:
-            role = msg['role']
-            content = self.load_content(msg['content'])
-            prompt = f'<|im_start|>{role}\n' + content + '<|im_end|>\n'
+        cur_input_ids = result.pop('input_ids')[0]
+        cur_attention_mask = result.pop('attention_mask')[0]
 
-            cur_image_num = prompt.count("<|image_pad|>")                
-            if cur_image_num > 0:
-                result = processor(image_inputs[image_count:image_count+cur_image_num], [prompt], add_special_tokens=False, return_tensors="pt")
-                image_count += cur_image_num
-            else:
-                result = processor(None, [prompt], add_special_tokens=False, return_tensors="pt")
-            
-            cur_input_ids = result.pop('input_ids')[0]
-            cur_attention_mask = result.pop('attention_mask')[0]
-            if 'pixel_values' in result: # 10764, 1176
-                pixel_values.append(result["pixel_values"])
-            if 'image_grid_thw' in result:
-                image_grid_thw.append(result["image_grid_thw"])
-            
+        pixel_values = result.get("pixel_values", None)
+        image_grid_thw = result.get("image_grid_thw", None)
 
-            input_ids.append(cur_input_ids)
-            attention_mask.append(cur_attention_mask)
-            if role in ["system", "user"]:
-                labels.append(torch.full_like(cur_input_ids, -100))
-            else:
-                labels.append(cur_input_ids)
-
-        input_ids = torch.cat(input_ids, dim=0)
-        labels = torch.cat(labels, dim=0)
-        attention_mask = torch.cat(attention_mask, dim=0)  
+        input_ids = cur_input_ids
+        labels = torch.full_like(cur_input_ids, -100)
+        attention_mask = cur_attention_mask
 
         self.input_ids = torch.cat([self.input_ids, input_ids], dim=0)
         self.labels = torch.cat([self.labels, labels], dim=0)
         self.attention_mask = torch.cat([self.attention_mask, attention_mask], dim=0)
 
-        pixel_values = torch.cat(pixel_values, dim=0) if len(pixel_values) > 0 else None
-        image_grid_thw = torch.cat(image_grid_thw, dim=0) if len(image_grid_thw) > 0 else None
-
-        if self.pixel_values is None:
-            self.pixel_values = pixel_values
-        else:
-            if pixel_values is not None:
+        if pixel_values is not None:
+            if self.pixel_values is None:
+                self.pixel_values = pixel_values
+            else:
                 self.pixel_values = torch.cat([self.pixel_values, pixel_values], dim=0)
-        
-        if self.image_grid_thw is None:
-            self.image_grid_thw = image_grid_thw
-        else:
-            if image_grid_thw is not None:
+
+        if image_grid_thw is not None:
+            if self.image_grid_thw is None:
+                self.image_grid_thw = image_grid_thw
+            else:
                 self.image_grid_thw = torch.cat([self.image_grid_thw, image_grid_thw], dim=0)
-            
 
     def get_train_dict(self):
         position_ids = get_rope_index(
@@ -1033,6 +1003,20 @@ class EnvWorker():
             )
         self.pixel_values = pixel_values
         self.image_grid_thw = image_grid_thw
+
+        # Validate final pixel_values vs input_ids after truncation
+        if self.pixel_values is not None and self.image_grid_thw is not None:
+            final_n_image_tokens = (input_ids == self.tokenizer.convert_tokens_to_ids("<|image_pad|>")).sum().item()
+            merge_size = 2
+            final_expected = sum(t * (h // merge_size) * (w // merge_size) for t, h, w in self.image_grid_thw.tolist())
+            final_patches = final_expected * (merge_size ** 2)
+            if final_patches != self.pixel_values.shape[0] or final_n_image_tokens != final_expected:
+                print(f"[GET_TRAIN_DICT] FINAL MISMATCH after truncation: "
+                      f"input_ids has {final_n_image_tokens} image tokens, "
+                      f"image_grid_thw predicts {final_expected} tokens ({final_patches} patches), "
+                      f"pixel_values.shape[0]={self.pixel_values.shape[0]}, "
+                      f"image_grid_thw={self.image_grid_thw.tolist()}, "
+                      f"traj_len={self.step_counter}")
         data = {
             'input_ids': input_ids,
             'labels': labels,
