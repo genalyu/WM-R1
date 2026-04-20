@@ -190,6 +190,9 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 sleep 1
             done
 
+            # Switch back to 3spo for Ray worker
+            conda activate 3spo
+
             # Ray Worker (GPU 1 only)
             echo "[$(hostname)] Starting Ray worker..."
             ray stop --force 2>/dev/null || true

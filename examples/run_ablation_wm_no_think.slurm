@@ -72,6 +72,9 @@ for i in $(seq 1 120); do
     fi
     sleep 1
 done
+
+# Switch back to training env — Ray head must match training environment (3spo)
+conda activate 3spo
 HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
@@ -138,6 +141,10 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
                 fi
                 sleep 1
             done
+
+            # Switch back to 3spo for Ray worker
+            conda activate 3spo
+
             # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
