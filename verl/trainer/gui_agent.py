@@ -910,8 +910,8 @@ class EnvWorker():
 
         self.action_parse_res_factor = 1000
         self.model_type = "qwen25vl"
-        self.max_pixels = 16384*28*28
-        self.min_pixels = 100*28*28
+        self.max_pixels = getattr(config.data, "max_pixels", 1003520)
+        self.min_pixels = getattr(config.data, "min_pixels", 50176)
 
         self.instruction = None
         self.task_config = None
@@ -971,8 +971,8 @@ class EnvWorker():
                     [prompt],
                     add_special_tokens=False,
                     return_tensors="pt",
-                    min_pixels=3136,
-                    max_pixels=2116800,
+                    min_pixels=self.min_pixels,
+                    max_pixels=self.max_pixels,
                 )
                 image_count += cur_image_num
             else:
@@ -1149,8 +1149,8 @@ class EnvWorker():
                         {
                             "type": "image",
                             "image": f"data:image/jpeg;base64,{image_base64}",
-                            "min_pixels": 3136,
-                            "max_pixels": 2116800,
+                            "min_pixels": self.min_pixels,
+                            "max_pixels": self.max_pixels,
                         }
                     ]
                 }
@@ -1247,8 +1247,8 @@ class EnvWorker():
                     {
                         "type": "image",
                         "image": f"data:image/jpeg;base64,{image_base64}",
-                        "min_pixels": 3136,
-                        "max_pixels": 2116800,
+                        "min_pixels": self.min_pixels,
+                        "max_pixels": self.max_pixels,
                     }
                 ]
             }
@@ -1446,8 +1446,8 @@ class EnvWorker():
                     {
                         "type": "image",
                         "image": f"data:image/jpeg;base64,{image_base64}",
-                        "min_pixels": 3136,
-                        "max_pixels": 2116800,
+                        "min_pixels": self.min_pixels,
+                        "max_pixels": self.max_pixels,
                     }
                 ]
             })
