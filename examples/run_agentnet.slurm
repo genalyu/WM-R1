@@ -241,6 +241,33 @@ export OMP_NUM_THREADS=4
 # Ensure Ray Python API can auto-detect the cluster
 export RAY_ADDRESS="$HEAD_NODE_IP:6379"
 
+# Pre-flight GCS health check
+echo "Pre-flight GCS health check..."
+if ray status > /tmp/ray_preflight_status.txt 2>&1; then
+    echo "GCS healthy. Cluster resources:"
+    grep -E "^GPU|^CPU|^Memory" /tmp/ray_preflight_status.txt || true
+else
+    echo "ERROR: GCS is NOT responsive before running main.py!"
+    echo "Ray head process check:"
+    ps aux | grep -E "gcs_server|raylet|redis-server" | grep -v grep || true
+    echo "--- Ray head log (last 50 lines) ---"
+    tail -50 /tmp/ray_head.log 2>/dev/null || true
+    echo "--- Attempting Ray restart ---"
+    ray stop --force 2>/dev/null || true
+    sleep 2
+    rm -rf /tmp/ray
+    export CUDA_VISIBLE_DEVICES=1
+    nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+        --num-gpus=1 > /tmp/ray_head_restart.log 2>&1 &
+    for i in $(seq 1 120); do
+        if ray status > /dev/null 2>&1; then
+            echo "Ray cluster restarted and ready after ${i}s"
+            break
+        fi
+        sleep 1
+    done
+fi
+
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
@@ -259,7 +286,7 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=2048 \
+    data.max_prompt_length=4096 \
     data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
@@ -280,7 +307,8 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=3072 \
+    worker.rollout.max_num_batched_tokens=6000 \
+    rollout.max_model_len = 7000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \

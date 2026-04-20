@@ -97,15 +97,58 @@ def main():
     ppo_config = OmegaConf.to_object(ppo_config)
 
     if not ray.is_initialized():
-        # this is for local ray cluster
-        ray.init(address="auto", runtime_env={"env_vars": {
-            "TOKENIZERS_PARALLELISM": "false",
-            "NCCL_DEBUG": "WARN",
-            "HF_HUB_OFFLINE": "1",
-            "TRANSFORMERS_OFFLINE": "1",
-            "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
-            "OMP_NUM_THREADS": "4",
-        }})
+        import os
+        import subprocess
+        import time
+
+        ray_address = os.environ.get("RAY_ADDRESS", "")
+
+        def _check_gcs_alive(addr: str) -> bool:
+            """Quick health check: ping Ray GCS via CLI."""
+            result = subprocess.run(
+                ["ray", "status"], capture_output=True, timeout=10,
+                env={**os.environ, "RAY_ADDRESS": addr} if addr else None,
+            )
+            return result.returncode == 0
+
+        # If an existing cluster was specified, verify GCS is actually responsive
+        if ray_address:
+            print(f"Checking Ray cluster health at {ray_address}...")
+            if not _check_gcs_alive(ray_address):
+                print("WARNING: Existing Ray cluster GCS is not responsive, restarting...")
+                subprocess.run(["ray", "stop", "--force"], capture_output=True)
+                time.sleep(2)
+                subprocess.run(["rm", "-rf", "/tmp/ray"], capture_output=True)
+                ray_address = ""  # Force fresh start below
+
+        if ray_address:
+            # Existing cluster is healthy — connect to it
+            print(f"Connecting to existing Ray cluster at {ray_address}...")
+            ray.init(address="auto", ignore_reinit_error=True, runtime_env={"env_vars": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "NCCL_DEBUG": "WARN",
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
+                "OMP_NUM_THREADS": "4",
+            }})
+        else:
+            # No existing cluster or it died — start fresh
+            print("Starting a new Ray cluster...")
+            subprocess.run(["ray", "start", "--head", "--port", "6379"], capture_output=True)
+            for i in range(60):
+                if _check_gcs_alive("localhost:6379"):
+                    print(f"Ray cluster ready after {i}s")
+                    break
+                time.sleep(1)
+            ray.init(address="localhost:6379", ignore_reinit_error=True, runtime_env={"env_vars": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "NCCL_DEBUG": "WARN",
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
+                "OMP_NUM_THREADS": "4",
+            }})
     
     print(ray.cluster_resources().keys())
 

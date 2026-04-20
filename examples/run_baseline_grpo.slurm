@@ -137,6 +137,32 @@ export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
 export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
 export CUDA_HOST_COMPILER=$CC
 
+# Pre-flight GCS health check
+echo "Pre-flight GCS health check..."
+if ray status > /tmp/ray_preflight_status.txt 2>&1; then
+    echo "GCS healthy. Cluster resources:"
+    grep -E "^GPU|^CPU|^Memory" /tmp/ray_preflight_status.txt || true
+else
+    echo "ERROR: GCS is NOT responsive before running main.py!"
+    echo "Ray head process check:"
+    ps aux | grep -E "gcs_server|raylet|redis-server" | grep -v grep || true
+    echo "--- Ray head log (last 50 lines) ---"
+    tail -50 /tmp/ray_head.log 2>/dev/null || true
+    echo "--- Attempting Ray restart ---"
+    ray stop --force 2>/dev/null || true
+    sleep 2
+    rm -rf /tmp/ray
+    nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
+        --num-gpus=$NUM_GPUS_PER_NODE > /tmp/ray_head_restart.log 2>&1 &
+    for i in $(seq 1 120); do
+        if ray status > /dev/null 2>&1; then
+            echo "Ray cluster restarted and ready after ${i}s"
+            break
+        fi
+        sleep 1
+    done
+fi
+
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-baseline" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
@@ -175,6 +201,7 @@ python3 -m verl.trainer.main \
     worker.rollout.limit_images=16 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=6000 \
+    rollout.max_model_len = 7000 \
     algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
