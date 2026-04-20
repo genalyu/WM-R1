@@ -80,6 +80,10 @@ if [ "$GCS_READY" -ne 1 ]; then
     exit 1
 fi
 
+# Export Ray address so Python can auto-detect it
+export RAY_ADDRESS="127.0.0.1:6379"
+echo "RAY_ADDRESS=$RAY_ADDRESS"
+
 sleep 5
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS on other nodes"
@@ -149,8 +153,8 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=8192 \
-    data.max_response_length=512 \
+    data.max_prompt_length=2048 \
+    data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
     data.rollout_batch_size=2 \
@@ -170,7 +174,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.limit_images=16 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
-    worker.rollout.max_num_batched_tokens=9000 \
+    worker.rollout.max_num_batched_tokens=3072 \
     algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \

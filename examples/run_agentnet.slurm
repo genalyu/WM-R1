@@ -238,6 +238,9 @@ export CUDA_HOST_COMPILER=$CC
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
 
+# Ensure Ray Python API can auto-detect the cluster
+export RAY_ADDRESS="127.0.0.1:6379"
+
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
@@ -256,8 +259,8 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=16384 \
-    data.max_response_length=512 \
+    data.max_prompt_length=2048 \
+    data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
     data.rollout_batch_size=2 \
@@ -277,7 +280,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=18000 \
+    worker.rollout.max_num_batched_tokens=3072 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
