@@ -223,7 +223,7 @@ SYSTEM_PROMPT="You are a helpful assistant."
 
 NUM_GPUS_PER_NODE=1         # 训练只用 GPU 1
 NUM_NODES=$SLURM_JOB_NUM_NODES
-ROLLOUT_N=$((3 * NUM_NODES))
+ROLLOUT_N=$((1 * NUM_NODES))
 NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rollout_n
 
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
@@ -315,7 +315,7 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.6 \
+    worker.rollout.gpu_memory_utilization=0.5 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
