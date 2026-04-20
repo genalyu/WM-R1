@@ -12,6 +12,7 @@ import base64
 import io
 import argparse
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from datetime import datetime
 
 import numpy as np
@@ -69,24 +70,30 @@ class WMHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({
-                    "id": f"chatcmpl-{int(time.time())}",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": "qwen3-vl-wm",
-                    "choices": [{
-                        "index": 0,
-                        "message": {"role": "assistant", "content": output_text},
-                        "finish_reason": "stop",
-                    }],
-                }).encode())
+                try:
+                    self.wfile.write(json.dumps({
+                        "id": f"chatcmpl-{int(time.time())}",
+                        "object": "chat.completion",
+                        "created": int(time.time()),
+                        "model": "qwen3-vl-wm",
+                        "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": output_text},
+                            "finish_reason": "stop",
+                        }],
+                    }).encode())
+                except (BrokenPipeError, ConnectionResetError):
+                    print(f"[WARN] client disconnected before response (idx={body.get('idx', '?')})")
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                try:
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
     def _decode_image_from_messages(self, content_list):
         """Extract image from OpenAI-format message content."""
@@ -238,6 +245,6 @@ if __name__ == "__main__":
     )
     print("Model loaded.")
 
-    server = HTTPServer(("0.0.0.0", args.port), WMHandler)
+    server = type("ThreadedHTTPServer", (ThreadingMixIn, HTTPServer), {"daemon_threads": True})(("0.0.0.0", args.port), WMHandler)
     print(f"WM server running on port {args.port}")
     server.serve_forever()

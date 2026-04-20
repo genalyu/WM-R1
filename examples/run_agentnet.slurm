@@ -57,6 +57,8 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
+# Fix Playwright Node GLIBC_2.25 mismatch on compute nodes
+export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
 cd $PROJECT_DIR
 CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
     --model $WM_MODEL_PATH \
@@ -174,6 +176,8 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export CONDA_PREFIX=""
             eval "$(conda shell.bash hook)"
             conda activate wm
+            # Fix Playwright Node GLIBC_2.25 mismatch on compute nodes
+            export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
             cd $PROJECT_DIR
             CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
