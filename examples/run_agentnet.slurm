@@ -308,7 +308,6 @@ python3 -m verl.trainer.main \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
     worker.rollout.max_num_batched_tokens=6000 \
-    rollout.max_model_len = 7000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \

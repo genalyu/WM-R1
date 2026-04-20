@@ -201,7 +201,6 @@ python3 -m verl.trainer.main \
     worker.rollout.limit_images=16 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=6000 \
-    rollout.max_model_len = 7000 \
     algorithm.adv_estimator="grpo" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
