@@ -193,7 +193,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             # Switch back to 3spo for Ray worker
             conda activate 3spo
 
-            # Ray Worker (GPU 1 only) — use nohup + background to survive srun exit
+            # Ray Worker (GPU 1 only)
             echo "[$(hostname)] Starting Ray worker..."
             ray stop --force 2>/dev/null || true
             sleep 2
@@ -203,23 +203,15 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$WORKER_IP\": 128}" \
                 > /tmp/ray_worker.log 2>&1 &
             disown
-            echo "[$(hostname)] Ray worker started, exit code: $?"
-            sleep 5
-        '
-    echo "All worker nodes initialized"
+            echo "[$(hostname)] Ray worker started"
 
-    # Wait for worker to fully join the cluster
-    echo "Waiting for worker node to join cluster..."
-    for i in $(seq 1 60); do
-        NODES=$(ray status 2>/dev/null | grep -c "^Node")
-        if [ "$NODES" -ge 2 ]; then
-            echo "Worker node joined after ${i}s. Cluster status:"
-            ray status 2>/dev/null | grep -E "^Node|^GPU" || true
-            break
-        fi
-        sleep 1
-    done
-    ray status 2>/dev/null | grep -E "^Node|^GPU" || true
+            # Keep srun alive — Slurm cgroup cleanup kills background processes when srun exits
+            echo "[$(hostname)] Entering keep-alive loop..."
+            while true; do
+                sleep 60
+            done
+        ' &
+    echo "All worker nodes initialized (srun running in background)"
 else
     echo "Single-node job, skipping worker node setup"
 fi
