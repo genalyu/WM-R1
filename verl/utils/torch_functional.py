@@ -231,7 +231,7 @@ def postprocess_data(
                 else:
                     image_grid_thw = image_grid_thw[:len(image_grid_thw) - n_images_to_remove]
                     remaining_tokens = sum(tokens_per_image[:len(tokens_per_image) - n_images_to_remove])
-                    n_features_after = remaining_tokens * merge_size
+                    n_features_after = remaining_tokens * (merge_size ** 2)
                     if n_features_after < pixel_values.shape[0]:
                         pixel_values = pixel_values[:n_features_after]
 
