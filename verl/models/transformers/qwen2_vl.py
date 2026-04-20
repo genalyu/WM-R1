@@ -229,7 +229,7 @@ def qwen_2_mixed_modality_forward(
         # for processing the visual model. To avoid a DeepSpeed error, we must pass through the
         # visual model twice in every case.
 
-        if pixel_values is not None:
+        if pixel_values is not None and pixel_values.numel() > 0:
             pixel_values = pixel_values.type(self.visual.get_dtype())
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
             n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
@@ -249,7 +249,7 @@ def qwen_2_mixed_modality_forward(
         else:
             self.visual(dummy_pixel, grid_thw=dummy_grid)
 
-        if pixel_values_videos is not None:
+        if pixel_values_videos is not None and pixel_values_videos.numel() > 0:
             pixel_values_videos = pixel_values_videos.type(self.visual.get_dtype())
             video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
             n_video_tokens = (input_ids == self.config.video_token_id).sum().item()
