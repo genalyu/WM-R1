@@ -418,20 +418,27 @@ class GRPODatasetProcessor:
                 prompt = f'<|im_start|>{role}\n' + content + '<|im_end|>\n'
                 prompts.append(prompt)
 
-                cur_image_num = prompt.count("<|image_pad|>")                
+                cur_image_num = prompt.count("<|video_pad|>")
                 if cur_image_num > 0:
-                    result = processor(image_inputs[image_count:image_count+cur_image_num], [prompt], add_special_tokens=False, return_tensors="pt")
+                    result = processor(
+                        image_inputs[image_count:image_count+cur_image_num],
+                        [prompt],
+                        add_special_tokens=False,
+                        return_tensors="pt",
+                        min_pixels=self.min_pixels,
+                        max_pixels=self.max_pixels,
+                    )
                     image_count += cur_image_num
                 else:
                     result = processor(None, [prompt], add_special_tokens=False, return_tensors="pt")
-                
+
                 cur_input_ids = result.pop('input_ids')[0]
                 cur_attention_mask = result.pop('attention_mask')[0]
                 if 'pixel_values' in result: # 10764, 1176
                     pixel_values.append(result["pixel_values"])
                 if 'image_grid_thw' in result:
                     image_grid_thw.append(result["image_grid_thw"])
-                
+
 
                 input_ids.append(cur_input_ids)
                 attention_mask.append(cur_attention_mask)
@@ -576,20 +583,27 @@ class OSWorldGRPODataset(ImageProcessMixin):
                 prompt = f'<|im_start|>{role}\n' + content + '<|im_end|>\n'
                 prompts.append(prompt)
 
-                cur_image_num = prompt.count("<|image_pad|>")                
+                cur_image_num = prompt.count("<|video_pad|>")
                 if cur_image_num > 0:
-                    result = processor(image_inputs[image_count:image_count+cur_image_num], [prompt], add_special_tokens=False, return_tensors="pt")
+                    result = processor(
+                        image_inputs[image_count:image_count+cur_image_num],
+                        [prompt],
+                        add_special_tokens=False,
+                        return_tensors="pt",
+                        min_pixels=self.min_pixels,
+                        max_pixels=self.max_pixels,
+                    )
                     image_count += cur_image_num
                 else:
                     result = processor(None, [prompt], add_special_tokens=False, return_tensors="pt")
-                
+
                 cur_input_ids = result.pop('input_ids')[0]
                 cur_attention_mask = result.pop('attention_mask')[0]
                 if 'pixel_values' in result: # 10764, 1176
                     pixel_values.append(result["pixel_values"])
                 if 'image_grid_thw' in result:
                     image_grid_thw.append(result["image_grid_thw"])
-                
+
 
                 input_ids.append(cur_input_ids)
                 attention_mask.append(cur_attention_mask)
