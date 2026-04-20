@@ -18,7 +18,6 @@ import numpy as np
 import torch
 from PIL import Image
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
-from qwen_vl_utils import process_vision_info
 
 from android_world.agents.wm_utils import render_aligned_png
 
@@ -134,7 +133,7 @@ class WMHandler(BaseHTTPRequestHandler):
             else:
                 qwen_messages.append({"role": role, "content": content})
 
-        # Apply chat template and generate
+        # Apply chat template and generate (Qwen3VL handles image processing internally)
         inputs = self.processor.apply_chat_template(
             qwen_messages,
             add_generation_prompt=True,
@@ -142,14 +141,6 @@ class WMHandler(BaseHTTPRequestHandler):
             return_dict=True,
             return_tensors="pt",
         ).to(self.model.device)
-
-        image_inputs, video_inputs = process_vision_info(qwen_messages)
-        if image_inputs is not None:
-            pixel_values_videos = image_inputs["pixel_values_videos"]
-            inputs["pixel_values_videos"] = pixel_values_videos.to(self.model.dtype)
-        if video_inputs is not None:
-            pixel_values_videos = video_inputs["pixel_values_videos"]
-            inputs["pixel_values_videos"] = pixel_values_videos.to(self.model.dtype)
 
         generated_ids = self.model.generate(
             **inputs,
