@@ -104,12 +104,16 @@ def main():
         ray_address = os.environ.get("RAY_ADDRESS", "")
 
         def _check_gcs_alive(addr: str) -> bool:
-            """Quick health check: ping Ray GCS via CLI."""
-            result = subprocess.run(
-                ["ray", "status"], capture_output=True, timeout=10,
-                env={**os.environ, "RAY_ADDRESS": addr} if addr else None,
-            )
-            return result.returncode == 0
+            """Quick health check: try connecting to Ray GCS."""
+            try:
+                result = subprocess.run(
+                    ["python3", "-c",
+                     f"import ray; ray.init(address='{addr}', ignore_reinit_error=True); ray.shutdown()"],
+                    capture_output=True, timeout=300,
+                )
+                return result.returncode == 0
+            except subprocess.TimeoutExpired:
+                return False
 
         # If an existing cluster was specified, verify GCS is actually responsive
         if ray_address:
