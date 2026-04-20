@@ -81,7 +81,7 @@ if [ "$GCS_READY" -ne 1 ]; then
 fi
 
 # Export Ray address so Python can auto-detect it
-export RAY_ADDRESS="127.0.0.1:6379"
+export RAY_ADDRESS="$HEAD_NODE_IP:6379"
 echo "RAY_ADDRESS=$RAY_ADDRESS"
 
 sleep 5

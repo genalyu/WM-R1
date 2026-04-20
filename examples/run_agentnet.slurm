@@ -239,7 +239,7 @@ export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
 
 # Ensure Ray Python API can auto-detect the cluster
-export RAY_ADDRESS="127.0.0.1:6379"
+export RAY_ADDRESS="$HEAD_NODE_IP:6379"
 
 python3 -m verl.trainer.main \
     trainer.project_name="wm-r1-agentnet" \
