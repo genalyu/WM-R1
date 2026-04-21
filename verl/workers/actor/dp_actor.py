@@ -280,11 +280,9 @@ class DataParallelPPOActor(BasePPOActor):
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
                     responses = model_inputs["responses"]
                     response_length = responses.size(1)
-                    attention_mask = model_inputs["attention_mask"]
-                    response_mask = model_inputs["response_mask"][:, 1:]
-                    # response_mask = attention_mask[:, -response_length:]
+                    response_mask = model_inputs["response_mask"]
                     old_log_probs = model_inputs["old_log_probs"]
-                    advantages = model_inputs["advantages"][:, 1:]
+                    advantages = model_inputs["advantages"]
                     # breakpoint()
 
                     # all return: (bsz, response_length)

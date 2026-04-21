@@ -5,12 +5,19 @@ import numpy as np
 from typing import Optional, Any
 import os
 import time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import math
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from android_world.env import representation_utils
-# 导入项目中已有的函数
 from android_world.agents.infer import array_to_jpeg_bytes, image_to_jpeg_bytes
+
+# Lazy import Playwright — may fail on systems with old glibc (e.g. CentOS 7)
+_playwright_available = False
+try:
+    from playwright.sync_api import sync_playwright
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+    _playwright_available = True
+except Exception:
+    _playwright_available = False
 
 # 定义常量
 ERROR_CALLING_LLM = "ERROR_CALLING_LLM"
@@ -148,94 +155,106 @@ class MLLMInferencer:
         return ERROR_CALLING_LLM, None, None
 
 
+def _render_png_with_pil(html_path, output_path, target_width=1080, target_height=2400):
+    """PIL-based fallback renderer when Playwright is unavailable.
+
+    Creates a solid-color placeholder image matching the expected dimensions.
+    """
+    img = Image.new("RGB", (target_width, target_height), color=(30, 30, 30))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+    except (IOError, OSError):
+        font = ImageFont.load_default()
+
+    label = f"[HTML render fallback: {os.path.basename(html_path)}]"
+    bbox = draw.textbbox((0, 0), label, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((target_width - tw) / 2, target_height / 2 - th), label, fill=(200, 200, 200), font=font)
+
+    img.save(output_path)
+    print(f"✔ [PIL Fallback] 已生成: {output_path}")
+    return True
+
+
 def render_aligned_png(html_path, output_path):
     """
     智能渲染 HTML 为 PNG。
     策略：
-    1. 优先尝试全资源加载 (High Fidelity)。
-    2. 如果超时，自动降级为拦截字体模式 (High Reliability)。
+    1. 如果 Playwright 不可用，使用 PIL 兜底。
+    2. 优先尝试全资源加载 (High Fidelity)。
+    3. 如果超时，自动降级为拦截字体模式 (High Reliability)。
     """
-    
-    # --- 1. 尺寸获取 ---
-    target_width, target_height = 1080, 2400 
+    target_width, target_height = 1080, 2400
+
+    if not _playwright_available:
+        return _render_png_with_pil(html_path, output_path, target_width, target_height)
 
     abs_html_path = os.path.abspath(html_path)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        
-        # 上下文配置 (一次性配置好视口)
-        context = browser.new_context(
-            viewport={'width': target_width, 'height': target_height},
-            device_scale_factor=1.0
-        )
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
 
-        # ============================================================
-        # 🟢 尝试 1: 高保真模式 (不拦截，等待字体加载)
-        # ============================================================
-        page = context.new_page()
-        success = False
-        
-        try:
-            # print(f"   🔄 尝试高保真渲染...")
-            
-            # 这里的 timeout 设为 30000ms (30秒)。
-            # 如果 6秒内字体下不下来，说明网络大概率不行，不如赶紧切 Plan B
-            page.goto(f"file://{abs_html_path}", wait_until="load", timeout=30000)
-            
-            # 等待网络空闲 (确保图片和字体都好了)
-            # 稍微给一点缓冲
-            page.wait_for_load_state("networkidle", timeout=2000)
-            
-            page.screenshot(path=output_path, omit_background=True)
-            print(f"✔ [High-Fi] 已生成: {output_path}")
-            success = True
+            context = browser.new_context(
+                viewport={"width": target_width, "height": target_height},
+                device_scale_factor=1.0,
+            )
 
-        except PlaywrightTimeoutError:
-            print(f"   ⚠️ 高保真加载超时 (字体/图片太慢)，切换到极速模式...")
-        except Exception as e:
-            print(f"   ⚠️ 高保真渲染出错: {e}，切换到极速模式...")
-        finally:
-            # 无论成功失败，先关掉这个页面，清理资源
-            page.close()
+            # ============================================================
+            # 🟢 尝试 1: 高保真模式 (不拦截，等待字体加载)
+            # ============================================================
+            page = context.new_page()
+            success = False
 
-        # ============================================================
-        # 🔴 尝试 2: 极速兜底模式 (如果尝试 1 失败)
-        # ============================================================
-        if not success:
-            page_fallback = context.new_page()
             try:
-                # 1. 拦截字体和 Google 请求
-                page_fallback.route("**/*.{woff,woff2,ttf,otf,eot}", lambda route: route.abort())
-                page_fallback.route("**/*fonts.googleapis.com*", lambda route: route.abort())
-                page_fallback.route("**/*fonts.gstatic.com*", lambda route: route.abort())
-                
-                # 2. 注入系统字体 CSS
-                page_fallback.add_init_script("""
-                    const style = document.createElement('style');
-                    style.innerHTML = `
-                        * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
-                    `;
-                    document.head.appendChild(style);
-                """)
+                page.goto(f"file://{abs_html_path}", wait_until="load", timeout=30000)
+                page.wait_for_load_state("networkidle", timeout=2000)
+                page.screenshot(path=output_path, omit_background=True)
+                print(f"✔ [High-Fi] 已生成: {output_path}")
+                success = True
 
-                # 3. 快速加载 (只等 DOM)
-                page_fallback.goto(f"file://{abs_html_path}", wait_until="domcontentloaded", timeout=15000)
-                
-                # 简单缓冲
-                page_fallback.wait_for_timeout(500)
-                
-                page_fallback.screenshot(path=output_path, omit_background=True)
-                print(f"✔ [Fallback] 已生成: {output_path}")
-                
+            except PlaywrightTimeoutError:
+                print("   ⚠️ 高保真加载超时 (字体/图片太慢)，切换到极速模式...")
             except Exception as e:
-                print(f"❌ 彻底失败 [{os.path.basename(html_path)}]: {e}")
+                print(f"   ⚠️ 高保真渲染出错: {e}，切换到极速模式...")
             finally:
-                page_fallback.close()
+                page.close()
 
-        browser.close()
+            # ============================================================
+            # 🔴 尝试 2: 极速兜底模式 (如果尝试 1 失败)
+            # ============================================================
+            if not success:
+                page_fallback = context.new_page()
+                try:
+                    page_fallback.route("**/*.{woff,woff2,ttf,otf,eot}", lambda route: route.abort())
+                    page_fallback.route("**/*fonts.googleapis.com*", lambda route: route.abort())
+                    page_fallback.route("**/*fonts.gstatic.com*", lambda route: route.abort())
 
-        return success
+                    page_fallback.add_init_script("""
+                        const style = document.createElement('style');
+                        style.innerHTML = `
+                            * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+                        `;
+                        document.head.appendChild(style);
+                    """)
+
+                    page_fallback.goto(f"file://{abs_html_path}", wait_until="domcontentloaded", timeout=15000)
+                    page_fallback.wait_for_timeout(500)
+                    page_fallback.screenshot(path=output_path, omit_background=True)
+                    print(f"✔ [Fallback] 已生成: {output_path}")
+
+                except Exception as e:
+                    print(f"❌ 彻底失败 [{os.path.basename(html_path)}]: {e}")
+                finally:
+                    page_fallback.close()
+
+            browser.close()
+            return success
+
+    except Exception as e:
+        print(f"⚠️ Playwright 启动失败 (glibc 不兼容?): {e}，使用 PIL 兜底...")
+        return _render_png_with_pil(html_path, output_path, target_width, target_height)
 
 
 # PNG图像与image_array的相互转换函数

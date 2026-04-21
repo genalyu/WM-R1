@@ -14,6 +14,7 @@ import argparse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from datetime import datetime
+from threading import Lock
 
 import numpy as np
 import torch
@@ -41,6 +42,7 @@ class WMHandler(BaseHTTPRequestHandler):
     model = None
     processor = None
     html_dir = "/tmp/wm_htmls"
+    _lock = None  # Prevent concurrent inference to avoid GPU OOM
 
     def log_message(self, *args):
         pass
@@ -66,7 +68,8 @@ class WMHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(content_length))
 
             try:
-                output_text = self.infer_from_openai_messages(body)
+                with self._lock:
+                    output_text = self.infer_from_openai_messages(body)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -113,7 +116,7 @@ class WMHandler(BaseHTTPRequestHandler):
 
     def infer_from_openai_messages(self, body):
         messages = body.get("messages", [])
-        max_tokens = body.get("max_tokens", 8192)
+        max_tokens = body.get("max_tokens", 4096)
         temperature = body.get("temperature", 0.0)
 
         # Reconstruct messages for Qwen3VL processor
@@ -207,7 +210,7 @@ class WMHandler(BaseHTTPRequestHandler):
             messages, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt"
         ).to(self.model.device)
 
-        generated_ids = self.model.generate(**inputs, max_new_tokens=8192)
+        generated_ids = self.model.generate(**inputs, max_new_tokens=4096)
         generated_ids_trimmed = [
             out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
@@ -237,7 +240,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--port", type=int, default=18888)
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.7)
     args = parser.parse_args()
 
     print(f"Loading Qwen3-VL from {args.model}...")
@@ -254,6 +257,7 @@ if __name__ == "__main__":
         trust_remote_code=True,
         max_memory=max_memory,
     )
+    WMHandler._lock = Lock()
     print("Model loaded.")
 
     server = type("ThreadedHTTPServer", (ThreadingMixIn, HTTPServer), {"daemon_threads": True})(("0.0.0.0", args.port), WMHandler)
