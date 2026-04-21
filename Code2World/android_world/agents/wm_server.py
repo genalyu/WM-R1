@@ -151,7 +151,7 @@ class WMHandler(BaseHTTPRequestHandler):
 
         generated_ids = self.model.generate(
             **inputs,
-            max_new_tokens=safe_max_tokens,
+            max_new_tokens=max_tokens,
             temperature=temperature,
             do_sample=temperature > 0,
         )
@@ -167,6 +167,7 @@ class WMHandler(BaseHTTPRequestHandler):
         if hasattr(self.model, "past_key_values") and self.model.past_key_values is not None:
             self.model.past_key_values = None
         torch.cuda.empty_cache()
+        return output_text
 
     # Legacy endpoint for backward compatibility
     def do_POST_legacy(self):
