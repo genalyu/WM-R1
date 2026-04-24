@@ -61,6 +61,7 @@ class vLLMRollout(BaseRollout):
         super().__init__()
         self.rank = int(os.getenv("RANK", "0"))
         self.config = config
+        self.tokenizer = tokenizer
         self.pad_token_id = tokenizer.pad_token_id
         if config.tensor_parallel_size > torch.distributed.get_world_size():
             raise ValueError("Tensor parallelism size should be less than world size.")
