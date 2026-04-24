@@ -65,6 +65,13 @@ class HFRollout(BaseRollout):
             response_ids.tolist(), self.pad_token_id, max_length=self.config.response_length
         ).to(input_ids.device)
 
+        # Replace image/video token IDs in generated responses with pad tokens.
+        image_token_id = self.tokenizer.convert_tokens_to_ids("<|image_pad|>")
+        video_token_id = self.tokenizer.convert_tokens_to_ids("<|video_pad|>")
+        for tok_id in [image_token_id, video_token_id]:
+            if tok_id is not None:
+                response_ids.masked_fill_(response_ids == tok_id, self.pad_token_id)
+
         sequence_ids = torch.cat([input_ids, response_ids], dim=-1)
         response_length = response_ids.size(1)
         

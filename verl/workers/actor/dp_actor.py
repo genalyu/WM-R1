@@ -96,15 +96,23 @@ class DataParallelPPOActor(BasePPOActor):
                             f"expected_patches={expected_patches}, expected_tokens={expected_tokens}, "
                             f"image_grid_thw={grid.tolist()}, pixel_values.shape={pv.shape}"
                         )
-                    # Also validate image token count in input_ids
-                    image_token_id = 151655  # Qwen2-VL image token ID
-                    n_image_tokens = (input_ids == image_token_id).sum().item()
-                    if n_image_tokens != expected_tokens:
-                        print(
-                            f"[WARN] Image token count mismatch: input_ids has {n_image_tokens} image tokens, "
-                            f"but image_grid_thw expects {expected_tokens}. "
-                            f"input_ids.shape={input_ids.shape}, image_grid_thw={grid.tolist()}"
-                        )
+                    # Replace image tokens in the RESPONSE portion with pad tokens.
+                    # The model may generate image token IDs as text output, but these
+                    # have no corresponding image features, causing a forward pass error.
+                    image_token_id = self.actor_module.config.image_token_id
+                    prompt_length = seqlen - response_length
+                    if prompt_length > 0:
+                        response_part = input_ids[:, prompt_length:]  # (bsz, response_length)
+                        generated_image_tokens = (response_part == image_token_id).sum().item()
+                        if generated_image_tokens > 0:
+                            print(
+                                f"[WARN] Model generated {generated_image_tokens} image tokens in responses "
+                                f"(no corresponding features). Replacing with pad tokens."
+                            )
+                            input_ids = input_ids.clone()
+                            input_ids[:, prompt_length:] = response_part.masked_fill(
+                                response_part == image_token_id, 0
+                            )
                 elif grid.numel() == 0 and pv.numel() == 0:
                     # Both empty — no images, that's fine
                     pass

@@ -168,6 +168,17 @@ class vLLMRollout(BaseRollout):
 
         sequence_ids = torch.cat([input_ids, response_ids], dim=-1)
         response_length = response_ids.size(1)
+
+        # Replace image/video token IDs in generated responses with pad tokens.
+        # The model may generate these special tokens as text output, but there
+        # are no corresponding image features, causing a mismatch in the actor forward.
+        image_token_id = self.tokenizer.convert_tokens_to_ids("<|image_pad|>")
+        video_token_id = self.tokenizer.convert_tokens_to_ids("<|video_pad|>")
+        for tok_id in [image_token_id, video_token_id]:
+            if tok_id is not None:
+                response_ids.masked_fill_(response_ids == tok_id, self.pad_token_id)
+                # Also fix sequence_ids since it was already concatenated
+                sequence_ids.masked_fill_(sequence_ids == tok_id, self.pad_token_id)
         delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
         delta_position_id = delta_position_id.view(1, -1).expand(batch_size, -1)
         if position_ids.dim() == 3:  # qwen2vl mrope
