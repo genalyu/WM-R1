@@ -287,6 +287,13 @@ class DataParallelPPOActor(BasePPOActor):
 
                     # all return: (bsz, response_length)
                     log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
+
+                    # Ensure response_mask matches actual log_probs seq_len
+                    # (handles edge cases where generated responses differ from expected length)
+                    if response_mask.size(1) != log_probs.size(1):
+                        response_mask = response_mask[:, :log_probs.size(1)]
+                        advantages = advantages[:, :log_probs.size(1)]
+                        old_log_probs = old_log_probs[:, :log_probs.size(1)]
                     entropy_loss = -VF.masked_mean(log_probs, response_mask)  # estimator of entropy loss
 
                     pg_loss, pg_clipfrac_higher, pg_clipfrac_lower, ppo_kl = core_algos.compute_policy_loss(

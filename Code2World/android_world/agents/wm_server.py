@@ -116,7 +116,7 @@ class WMHandler(BaseHTTPRequestHandler):
 
     def infer_from_openai_messages(self, body):
         messages = body.get("messages", [])
-        max_tokens = body.get("max_tokens", 4096)
+        max_tokens = body.get("max_tokens", 2048)
         temperature = body.get("temperature", 0.0)
 
         # Reconstruct messages for Qwen3VL processor
@@ -156,6 +156,7 @@ class WMHandler(BaseHTTPRequestHandler):
             **inputs,
             max_new_tokens=max_tokens,
             temperature=temperature,
+            use_cache=True,           # 启用 KV cache
             do_sample=temperature > 0,
         )
         generated_ids_trimmed = [
@@ -240,7 +241,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--port", type=int, default=18888)
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.7)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.5)
     args = parser.parse_args()
 
     print(f"Loading Qwen3-VL from {args.model}...")
@@ -256,6 +257,9 @@ if __name__ == "__main__":
         device_map=args.device,
         trust_remote_code=True,
         max_memory=max_memory,
+        torch_dtype=torch.bfloat16,        # 使用 bf16 而不是 fp32
+        low_cpu_mem_usage=True,            # 降低 CPU 内存使用
+        use_cache=True,                    # 启用 KV cache
     )
     WMHandler._lock = Lock()
     print("Model loaded.")
