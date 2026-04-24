@@ -5,12 +5,16 @@ import numpy as np
 from typing import Optional, Any
 import os
 import time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import math
 from PIL import Image, ImageDraw
 from android_world.env import representation_utils
 # 导入项目中已有的函数
 from android_world.agents.infer import array_to_jpeg_bytes, image_to_jpeg_bytes
+
+# Playwright import deferred — its Node binary may not match cluster GLIBC.
+# Only the legacy render_aligned_png() path needs it.
+_sync_playwright = None
+_PlaywrightTimeoutError = None
 
 # 定义常量
 ERROR_CALLING_LLM = "ERROR_CALLING_LLM"
@@ -148,6 +152,16 @@ class MLLMInferencer:
         return ERROR_CALLING_LLM, None, None
 
 
+def _get_playwright():
+    """Lazy-load Playwright — only called when render_aligned_png is actually used."""
+    global _sync_playwright, _PlaywrightTimeoutError
+    if _sync_playwright is None:
+        from playwright.sync_api import sync_playwright as _sp, TimeoutError as _pte
+        _sync_playwright = _sp
+        _PlaywrightTimeoutError = _pte
+    return _sync_playwright, _PlaywrightTimeoutError
+
+
 def render_aligned_png(html_path, output_path):
     """
     智能渲染 HTML 为 PNG。
@@ -155,9 +169,9 @@ def render_aligned_png(html_path, output_path):
     1. 优先尝试全资源加载 (High Fidelity)。
     2. 如果超时，自动降级为拦截字体模式 (High Reliability)。
     """
-    
-    # --- 1. 尺寸获取 ---
-    target_width, target_height = 1080, 2400 
+    sync_playwright, PlaywrightTimeoutError = _get_playwright()
+
+    target_width, target_height = 1080, 2400
 
     abs_html_path = os.path.abspath(html_path)
 
