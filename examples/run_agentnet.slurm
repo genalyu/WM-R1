@@ -330,7 +330,7 @@ python3 -m verl.trainer.main \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15 \
-    data.num_workers=4 \
+    data.num_workers=2 \
     data.val_batch_size=2
 
 # --- 5. 清理 ---
