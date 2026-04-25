@@ -194,11 +194,11 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.4 \
+    worker.rollout.gpu_memory_utilization=0.3 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
-    worker.rollout.limit_images=10 \
+    worker.rollout.limit_images=3 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=12000 \
     algorithm.adv_estimator="grpo" \
