@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1_baseline
 #SBATCH --partition=a100
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=24
@@ -98,8 +98,15 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export VLLM_WORKER_MULTIPROCESS_METHOD=spawn
             export TORCH_COMPILE_DISABLE=1
             export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
+            export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
+            export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
+            export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
+            export CUDA_HOST_COMPILER=$CC
+            export TOKENIZERS_PARALLELISM=false
+            export OMP_NUM_THREADS=4
             export HEAD_NODE_IP='"$HEAD_NODE_IP"'
             export VLLM_HOST_IP=$HEAD_NODE_IP
+            export PROJECT_DIR='"$PROJECT_DIR"'
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
             ray stop --force 2>/dev/null || true
             rm -rf /tmp/ray
@@ -141,7 +148,7 @@ export CUDA_HOST_COMPILER=$CC
 echo "Pre-flight GCS health check..."
 if ray status > /tmp/ray_preflight_status.txt 2>&1; then
     echo "GCS healthy. Cluster resources:"
-    grep -E "^GPU|^CPU|^Memory" /tmp/ray_preflight_status.txt || true
+    cat /tmp/ray_preflight_status.txt | head -30 || true
 else
     echo "ERROR: GCS is NOT responsive before running main.py!"
     echo "Ray head process check:"
