@@ -1,18 +1,17 @@
 #!/bin/bash
-#SBATCH --job-name=wm_r1_ablation_wm_no_think
+#SBATCH --job-name=wm_r1_ablation_no_think
 #SBATCH --partition=a100
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=24
-#SBATCH --mem=300G
-#SBATCH --output=logs/ablation_wm_no_think_%j.out
-#SBATCH --error=logs/ablation_wm_no_think_%j.err
+#SBATCH --mem=330G
+#SBATCH --output=logs/ablation_%j.out
+#SBATCH --error=logs/ablation_%j.err
 
 # ============================================================
-# Ablation: 使用世界模型做状态预测，但禁用 <think> 中的深度思考
-# GPU 分配：
-#   GPU 0 → vLLM WM 服务
+# GPU 分配策略：
+#   GPU 0 → vLLM WM 服务 (每个节点各起一个)
 #   GPU 1 → 训练 (FSDP + vLLM rollout)
 # ============================================================
 
@@ -27,6 +26,9 @@ rm -rf /tmp/ray
 rm -rf ~/.config/ray/
 pkill -9 -f raylet 2>/dev/null || true
 pkill -9 -f gcs_server 2>/dev/null || true
+# Kill any leftover Redis that might hold port 6379
+fuser -k 6379/tcp 2>/dev/null || true
+pkill -9 -f redis 2>/dev/null || true
 sleep 2
 
 # --- 全局环境变量 ---
@@ -43,11 +45,11 @@ export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=0
 cd /public/home/xlwang/genalyu/WM-R1
 PROJECT_DIR="/public/home/xlwang/genalyu/WM-R1"
 export PROJECT_DIR
-export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1
+export WANDB_DIR=/public/home/xlwang/genalyu/WM-R1/
 
 # World Model 配置
 WM_MODEL_PATH="/public/home/xlwang/genalyu/models/code2world"
-WM_PORT=18889
+WM_PORT=18888
 
 # --- 每节点启动 WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL ---
 echo "Starting WM server on $(hostname) GPU:0, port $WM_PORT"
@@ -55,13 +57,15 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
 export CONDA_PREFIX=""
 eval "$(conda shell.bash hook)"
 conda activate wm
+# Fix Playwright Node GLIBC_2.25 mismatch on compute nodes
+export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
 cd $PROJECT_DIR
 CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
     --model $WM_MODEL_PATH \
     --port $WM_PORT \
     --device cuda:0 &
 sleep 10
-export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
+export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
 echo "WM server URL: $WM_HTTP_URL"
 
 # 等 WM server 真正可用
@@ -79,28 +83,76 @@ HEAD_NODE_IP=$(hostname -I | awk '{print $1}')
 export HEAD_NODE_IP
 export VLLM_HOST_IP=$HEAD_NODE_IP
 
+# 额外清理：确保 Redis/端口 6379 没被占用
+fuser -k 6379/tcp 2>/dev/null || true
+sleep 1
+
 # 启动 Ray Head (GPU 1 only, GPU 0 is for WM vLLM)
 echo "Starting Ray HEAD on $(hostname) ($HEAD_NODE_IP)"
 export CUDA_VISIBLE_DEVICES=1
 nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
     --num-gpus=1 --resources="{\"docker:$HEAD_NODE_IP\": 128}" \
     > /tmp/ray_head.log 2>&1 &
+RAY_HEAD_PID=$!
+echo "Ray head process PID: $RAY_HEAD_PID"
 
-echo "Waiting for GCS to become available..."
-for i in $(seq 1 60); do
-    if ray healthcheck 2>/dev/null; then
+# 等几秒后检查进程是否还活着
+sleep 3
+if ! kill -0 $RAY_HEAD_PID 2>/dev/null; then
+    echo "ERROR: ray start process exited immediately. Log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
+
+# 等待 GCS 就绪 (直接探测 6379 端口，Ray 初始化 GPU 可能需要几分钟)
+echo "Waiting for Ray GCS to become available..."
+GCS_READY=0
+for i in $(seq 1 300); do
+    if bash -c 'echo > /dev/tcp/127.0.0.1/6379' 2>/dev/null; then
         echo "GCS ready after ${i}s"
+        GCS_READY=1
         break
     fi
     sleep 1
 done
+if [ "$GCS_READY" -ne 1 ]; then
+    echo "ERROR: Ray GCS failed to start after 300s. Check /tmp/ray_head.log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
+
+# Give Ray internal services time to fully initialize
+sleep 10
+
+# Wait until Ray Python API is actually usable
+echo "Waiting for Ray Python API to be ready..."
+RAY_API_READY=0
+for i in $(seq 1 120); do
+    if python3 -c "import ray; ray.init(address='auto', ignore_reinit_error=True); print('Ray API ready'); ray.shutdown()" 2>/dev/null; then
+        RAY_API_READY=1
+        break
+    fi
+    if [ $((i % 10)) -eq 0 ]; then
+        echo "Waiting for Ray API... ($i/120s)"
+    fi
+    sleep 1
+done
+if [ "$RAY_API_READY" -ne 1 ]; then
+    echo "ERROR: Ray Python API not ready after 120s."
+    echo "Ray head log:"
+    cat /tmp/ray_head.log
+    exit 1
+fi
 
 # 其他节点启动 Ray Worker + WM vLLM 服务
-sleep 5
 if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
     echo "Starting Ray WORKERS + WM servers on other nodes"
-    srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
+
+    # Launch worker node initialization via srun (foreground — blocks until workers finish setup)
+    echo "Launching srun for worker nodes..."
+    srun --nodes=$((SLURM_JOB_NUM_NODES - 1)) --ntasks-per-node=1 --ntasks=$((SLURM_JOB_NUM_NODES - 1)) --exclude=$(hostname) \
         bash -c '
+            echo "[$(hostname)] Worker node srun started"
             source ~/.bashrc
             source ~/jyy/anaconda/etc/profile.d/conda.sh
             conda activate 3spo
@@ -118,25 +170,25 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             export PROJECT_DIR='"$PROJECT_DIR"'
             export WM_MODEL_PATH='"$WM_MODEL_PATH"'
 
-            # WM 服务 (GPU 0) — 使用 transformers 原生加载 Qwen3-VL
-            WM_PORT=18889
-            echo "Starting WM server on $(hostname) GPU:0"
+            # WM 服务 (GPU 0)
+            WM_PORT=18888
+            echo "[$(hostname)] Starting WM server on GPU:0"
             export CONDA_PREFIX=""
             eval "$(conda shell.bash hook)"
             conda activate wm
+            # Fix Playwright Node GLIBC_2.25 mismatch on compute nodes
+            export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
             export PYTHONPATH=$PYTHONPATH:$PROJECT_DIR/Code2World
             cd $PROJECT_DIR
             CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_server.py \
                 --model $WM_MODEL_PATH \
                 --port $WM_PORT \
-                --device cuda:0 &
+                --device cuda:0 > /tmp/wm_server_worker.log 2>&1 &
             sleep 10
-
-            # Wait for WM server to become available
-            echo "Waiting for WM server on $(hostname)..."
+            echo "[$(hostname)] Waiting for WM server..."
             for i in $(seq 1 120); do
                 if curl -sf http://127.0.0.1:${WM_PORT}/v1/models > /dev/null 2>&1; then
-                    echo "WM server on $(hostname) ready after ${i}s"
+                    echo "[$(hostname)] WM server ready after ${i}s"
                     break
                 fi
                 sleep 1
@@ -145,59 +197,41 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             # Switch back to 3spo for Ray worker
             conda activate 3spo
 
-            # Ray Worker (GPU 1 only, GPU 0 is for WM vLLM)
+            # Ray Worker (GPU 1 only)
+            echo "[$(hostname)] Starting Ray worker..."
             ray stop --force 2>/dev/null || true
-            rm -rf /tmp/ray
-            rm -rf ~/.config/ray/
-            pkill -9 -f raylet 2>/dev/null || true
-            pkill -9 -f gcs_server 2>/dev/null || true
             sleep 2
+            WORKER_IP=$(hostname -I | awk "{print \$1}")
+            echo "[$(hostname)] Worker IP: $WORKER_IP, connecting to head: $HEAD_NODE_IP:6379"
             export CUDA_VISIBLE_DEVICES=1
-            nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" \
+            nohup ray start --address=$HEAD_NODE_IP:6379 --num-gpus=1 --resources="{\"docker:$WORKER_IP\": 128}" \
                 > /tmp/ray_worker.log 2>&1 &
             disown
-            echo "Ray worker started on $(hostname)"
-        '
-    echo "All worker nodes initialized"
+            echo "[$(hostname)] Ray worker started"
+
+            # Keep srun alive — Slurm cgroup cleanup kills background processes when srun exits
+            echo "[$(hostname)] Entering keep-alive loop..."
+            while true; do
+                sleep 60
+            done
+        ' &
+    echo "All worker nodes initialized (srun running in background)"
+else
+    echo "Single-node job, skipping worker node setup"
 fi
 
 # --- 2. 配置 ---
-EXPERIMENT_NAME="ablation_wm_no_think"
+EXPERIMENT_NAME="wm_r1_ablation_no_think"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
 SYSTEM_PROMPT="You are a helpful assistant."
 
-NUM_GPUS_PER_NODE=1
+NUM_GPUS_PER_NODE=1         # 训练只用 GPU 1
 NUM_NODES=$SLURM_JOB_NUM_NODES
-ROLLOUT_N=$((3 * NUM_NODES))
+ROLLOUT_N=$((1 * NUM_NODES))
 NUM_ENVS=$((2 * ROLLOUT_N))  # env workers 必须等于 rollout_batch_size * rollout_n
 
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
 VAL_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_test_1k.jsonl"
-
-# --- 等待所有 Ray 节点 GPU 就绪 ---
-EXPECTED_GPU=$((NUM_NODES * NUM_GPUS_PER_NODE))
-echo "Waiting for Ray cluster: expecting $EXPECTED_GPU GPUs..."
-for i in $(seq 1 120); do
-    ray status > /tmp/ray_status.txt 2>/dev/null
-    if [ $? -eq 0 ]; then
-        # Parse GPU count from ray status output
-        # Example: "GPU (0.0-1.0): 2.0/2.0 used"
-        AVAILABLE_GPU=$(grep "^GPU" /tmp/ray_status.txt | head -1 | grep -oP '\d+\.0(?=/)' | head -1 | cut -d'.' -f1)
-        if [ -z "$AVAILABLE_GPU" ]; then AVAILABLE_GPU=0; fi
-    fi
-    if [ "$AVAILABLE_GPU" -ge "$EXPECTED_GPU" ]; then
-        echo "Ray cluster ready: $AVAILABLE_GPU GPUs after ${i}s"
-        break
-    fi
-    if [ $((i % 10)) -eq 0 ]; then
-        echo "  ${i}s: only $AVAILABLE_GPU/$EXPECTED_GPU GPUs ready..."
-    fi
-    sleep 1
-done
-if [ "$AVAILABLE_GPU" -lt "$EXPECTED_GPU" ]; then
-    echo "ERROR: Only $AVAILABLE_GPU/$EXPECTED_GPU GPUs available after 120s. Worker nodes may not have joined."
-    exit 1
-fi
 
 # --- 3. 训练 (GPU 1, HTTP 连接 WM) ---
 cd $PROJECT_DIR
@@ -212,18 +246,18 @@ export NCCL_P2P_DISABLE=0
 export NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=600
 
+# Fix GCC/linker mismatch for Triton JIT compilation
+export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
+export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
+export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
+export CUDA_HOST_COMPILER=$CC
+
 # 限制线程数，避免 Ray worker 过多导致资源竞争
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
 
 # Ensure Ray Python API can auto-detect the cluster
 export RAY_ADDRESS="$HEAD_NODE_IP:6379"
-
-# Fix GCC/linker mismatch for Triton JIT compilation
-export LD_LIBRARY_PATH=/public/software/compiler/gnu/gcc-14.3.0/lib64:${LD_LIBRARY_PATH:-}
-export CC=/public/software/compiler/gnu/gcc-14.3.0/bin/gcc
-export AR=/public/software/compiler/gnu/gcc-14.3.0/bin/ar
-export CUDA_HOST_COMPILER=$CC
 
 # Pre-flight GCS health check
 echo "Pre-flight GCS health check..."
@@ -240,8 +274,9 @@ else
     ray stop --force 2>/dev/null || true
     sleep 2
     rm -rf /tmp/ray
+    export CUDA_VISIBLE_DEVICES=1
     nohup ray start --head --node-ip-address=$HEAD_NODE_IP --port=6379 \
-        --num-gpus=$NUM_GPUS_PER_NODE > /tmp/ray_head_restart.log 2>&1 &
+        --num-gpus=1 > /tmp/ray_head_restart.log 2>&1 &
     for i in $(seq 1 120); do
         if ray status > /dev/null 2>&1; then
             echo "Ray cluster restarted and ready after ${i}s"
@@ -257,7 +292,7 @@ python3 -m verl.trainer.main \
     trainer.logger="['console', 'wandb']" \
     trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
     trainer.nnodes=$NUM_NODES \
-    trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/ablation_wm_no_think/$SLURM_JOB_ID \
+    trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/ablation$SLURM_JOB_ID \
     trainer.save_freq=16 \
     trainer.save_limit=3 \
     trainer.val_before_train=True \
@@ -265,12 +300,12 @@ python3 -m verl.trainer.main \
     trainer.total_episodes=15 \
     env.use_wm=True \
     env.use_local_wm=False \
+    env.n_wm_max=0\
     env.wm_http_url="${WM_HTTP_URL}" \
-    env.n_wm_max=0 \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=4096 \
+    data.max_prompt_length=10240 \
     data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
@@ -291,12 +326,13 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=6000 \
+    worker.rollout.max_num_batched_tokens=12000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15 \
-    data.num_workers=4
+    data.num_workers=2 \
+    data.val_batch_size=2
 
 # --- 5. 清理 ---
 ray stop
