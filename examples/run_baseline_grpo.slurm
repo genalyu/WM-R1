@@ -205,7 +205,7 @@ python3 -m verl.trainer.main \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
-    worker.rollout.limit_images=3 \
+    worker.rollout.limit_images=16 \
     worker.rollout.tensor_parallel_size=$NUM_GPUS_PER_NODE \
     worker.rollout.max_num_batched_tokens=12000 \
     algorithm.adv_estimator="grpo" \
