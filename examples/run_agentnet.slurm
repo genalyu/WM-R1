@@ -295,8 +295,8 @@ python3 -m verl.trainer.main \
     trainer.default_local_dir=/public/home/xlwang/genalyu/WM-R1/checkpoints/$SLURM_JOB_ID \
     trainer.save_freq=16 \
     trainer.save_limit=3 \
-    trainer.val_before_train=True \
-    trainer.val_freq=16 \
+    trainer.val_before_train=False \
+    trainer.val_freq=999999 \
     trainer.total_episodes=15 \
     env.use_wm=True \
     env.use_local_wm=False \
