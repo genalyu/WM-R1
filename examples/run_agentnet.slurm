@@ -65,7 +65,7 @@ CUDA_VISIBLE_DEVICES=0 python $PROJECT_DIR/Code2World/android_world/agents/wm_se
     --port $WM_PORT \
     --device cuda:0 &
 sleep 10
-export WM_HTTP_URL="http://$(hostname -I | awk '{print $1}'):${WM_PORT}"
+export WM_HTTP_URL="http://127.0.0.1:${WM_PORT}"
 echo "WM server URL: $WM_HTTP_URL"
 
 # 等 WM server 真正可用
