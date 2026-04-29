@@ -107,7 +107,7 @@ pyasn1_modules
 pydantic
 pydantic_core
 pydub
-pyee
+pyee<12.0
 pygame
 PyJWT
 pyparsing
