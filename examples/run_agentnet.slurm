@@ -220,6 +220,21 @@ else
     echo "Single-node job, skipping worker node setup"
 fi
 
+# 等待所有节点 GPU 注册完毕
+TOTAL_GPUS=$((NUM_GPUS_PER_NODE * SLURM_JOB_NUM_NODES))
+echo "Waiting for all $TOTAL_GPUS GPUs to register..."
+for i in $(seq 1 300); do
+    AVAILABLE=$(ray status 2>/dev/null | grep -oP '^\s+\d+(\.\d+)?/(\d+(\.\d+)?) GPU' | head -1 | awk '{print $1}' | cut -d'/' -f1 || echo "0")
+    if [ "$AVAILABLE" -ge "$TOTAL_GPUS" ]; then
+        echo "All $AVAILABLE GPUs ready after ${i}s"
+        break
+    fi
+    if [ $((i % 30)) -eq 0 ]; then
+        echo "  GPU check: ${AVAILABLE}/${TOTAL_GPUS} available (${i}s elapsed)"
+    fi
+    sleep 1
+done
+
 # --- 2. 配置 ---
 EXPERIMENT_NAME="wm_r1"
 MODEL_PATH="/public/home/xlwang/genalyu/models/Qwen2.5-VL-3B-Instruct"
