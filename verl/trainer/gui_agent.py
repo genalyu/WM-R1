@@ -855,6 +855,7 @@ class EnvWorker():
         self.use_wm = getattr(config.env, "use_wm", False)
         self.n_wm = 0
         self.n_wm_max = getattr(config.env, "n_wm_max", 5)
+        self.max_trajectory_steps = getattr(config.data, "max_trajectory_steps", None)
 
         # 手动分配 GPU：worker 按 round-robin 分到不同 GPU
         # worker 0→GPU 0, worker 1→GPU 1, worker 2→GPU 0, ...
@@ -944,7 +945,19 @@ class EnvWorker():
                 return "<|vision_start|><|image_pad|><|vision_end|>"
         
         raise ValueError(f"Unknown content type: {content}")
-    
+
+    def _truncate_trajectory(self):
+        if self.max_trajectory_steps is None:
+            return
+        # history_messages: [system, user_instr, user_init_img] + 2 msgs per step
+        # Keep: first 3 (init) + last 2 * max_trajectory_steps
+        init_len = 3
+        max_keep = 2 * self.max_trajectory_steps
+        total = len(self.history_messages)
+        if total > init_len + max_keep:
+            self.history_messages = self.history_messages[:init_len] + self.history_messages[total - max_keep:]
+            self.history_images = [self.history_images[0]] + self.history_images[-self.max_trajectory_steps:]
+
     def process_message(self, message):
         tokenizer = self.tokenizer
         processor = self.processor
@@ -1451,6 +1464,7 @@ class EnvWorker():
                     }
                 ]
             })
+            self._truncate_trajectory()
             self.process_message(self.history_messages[-2:]) # gpt answer + next image
             return {
                 'env_idx': self.worker_idx,

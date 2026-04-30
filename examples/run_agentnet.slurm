@@ -330,7 +330,7 @@ python3 -m verl.trainer.main \
     worker.actor.optim.lr=1e-6 \
     worker.actor.optim.lr_warmup_ratio=0.05 \
     worker.actor.ppo_epochs=1 \
-    worker.actor.global_batch_size=1 \
+    worker.actor.global_batch_size=2 \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
@@ -346,6 +346,7 @@ python3 -m verl.trainer.main \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15 \
     data.num_workers=2 \
+    data.max_trajectory_steps=3 \
     data.val_batch_size=2
 
 # --- 5. 清理 ---
