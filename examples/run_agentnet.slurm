@@ -319,9 +319,9 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="${SYSTEM_PROMPT}" \
-    data.max_prompt_length=20480 \
-    data.max_response_length=1024 \
-    data.max_pixels=2116800 \
+    data.max_prompt_length=28000 \
+    data.max_response_length=2048 \
+    data.max_pixels=4194304 \
     data.min_pixels=256 \
     data.rollout_batch_size=2 \
     worker.actor.model.model_path=${MODEL_PATH} \
@@ -340,7 +340,7 @@ python3 -m verl.trainer.main \
     worker.rollout.temperature=1.0 \
     worker.rollout.tensor_parallel_size=1 \
     worker.rollout.limit_images=16 \
-    worker.rollout.max_num_batched_tokens=25000 \
+    worker.rollout.max_num_batched_tokens=32000 \
     algorithm.adv_estimator="wm_r1" \
     algorithm.disable_kl=True \
     env.num_envs=$NUM_ENVS \
