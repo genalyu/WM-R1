@@ -108,12 +108,18 @@ class EnvConfig:
     n_wm_max: int = 5
 
 @dataclass
+class RewardConfig:
+    alpha: float = 1.0
+    beta: float = 0.5
+
+@dataclass
 class PPOConfig:
     data: DataConfig = field(default_factory=DataConfig)
     worker: WorkerConfig = field(default_factory=WorkerConfig)
     algorithm: AlgorithmConfig = field(default_factory=AlgorithmConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     env: EnvConfig = field(default_factory=EnvConfig)
+    reward: RewardConfig = field(default_factory=RewardConfig)
 
     def post_init(self):
         self.worker.rollout.prompt_length = self.data.max_prompt_length

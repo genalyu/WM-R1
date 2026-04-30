@@ -347,6 +347,8 @@ python3 -m verl.trainer.main \
     env.max_steps=15 \
     data.num_workers=2 \
     data.max_trajectory_steps=3 \
+    reward.alpha=1.0 \
+    reward.beta=0.5 \
     data.val_batch_size=2
 
 # --- 5. 清理 ---

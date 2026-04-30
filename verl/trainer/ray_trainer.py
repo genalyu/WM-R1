@@ -944,8 +944,8 @@ class RayPPOTrainer:
                                     avg_len_ref=getattr(self.config.env, "avg_len_ref", 5.0),
                                     current_episode=self.global_step, # Assuming global_step is current episode
                                     total_episodes=self.config.trainer.total_episodes,
-                                    alpha=getattr(self.config.reward, "alpha", 1.0),
-                                    beta=getattr(self.config.reward, "beta", 0.5),
+                                    alpha=self.config.reward.alpha,
+                                    beta=self.config.reward.beta,
                                 )
                                 rewards.append(r)
                             
