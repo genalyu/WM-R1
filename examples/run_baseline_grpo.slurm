@@ -114,7 +114,7 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
         ' &
 
     # 等待所有 worker 节点 GPU 注册完毕
-    EXPECTED_GPUS=$((NUM_GPUS_PER_NODE * SLURM_JOB_NUM_NODES))
+    EXPECTED_GPUS=$((2 * SLURM_JOB_NUM_NODES))
     echo "Waiting for all $EXPECTED_GPUS GPUs to register..."
     for i in $(seq 1 300); do
         AVAILABLE=$(ray status 2>/dev/null | grep 'GPU' | head -1 | sed 's/[^0-9.]*//; s/\/.*//')
