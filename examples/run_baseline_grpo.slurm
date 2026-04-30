@@ -112,7 +112,21 @@ if [ "$SLURM_JOB_NUM_NODES" -gt 1 ]; then
             rm -rf /tmp/ray
             ray start --address=$HEAD_NODE_IP:6379 --resources="{\"docker:$(hostname -I | awk \"{print \$1}\")\": 128}" --block
         ' &
-    sleep 10
+
+    # 等待所有 worker 节点 GPU 注册完毕
+    EXPECTED_GPUS=$((NUM_GPUS_PER_NODE * SLURM_JOB_NUM_NODES))
+    echo "Waiting for all $EXPECTED_GPUS GPUs to register..."
+    for i in $(seq 1 300); do
+        AVAILABLE=$(ray status 2>/dev/null | grep 'GPU' | head -1 | sed 's/[^0-9.]*//; s/\/.*//')
+        if [ "$AVAILABLE" -ge "$EXPECTED_GPUS" ]; then
+            echo "All $AVAILABLE GPUs ready after ${i}s"
+            break
+        fi
+        if [ $((i % 30)) -eq 0 ]; then
+            echo "  GPU check: ${AVAILABLE}/${EXPECTED_GPUS} available (${i}s elapsed)"
+        fi
+        sleep 1
+    done
 fi
 
 # --- 2. 配置实验参数 ---
