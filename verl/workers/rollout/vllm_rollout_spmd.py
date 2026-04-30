@@ -82,7 +82,7 @@ class vLLMRollout(BaseRollout):
             dtype=PrecisionType.to_str(PrecisionType.to_dtype(config.dtype)),
             gpu_memory_utilization=config.gpu_memory_utilization,
             enforce_eager=config.enforce_eager,
-            max_model_len=config.prompt_length + config.response_length + 3000,
+            max_model_len=config.prompt_length + config.response_length + 4000,
             # max_num_batched_tokens=config.max_num_batched_tokens,
             enable_sleep_mode=True,
             disable_custom_all_reduce=True,
