@@ -48,6 +48,7 @@ class DataConfig:
     max_pixels: int = 4194304
     min_pixels: int = 262144
     num_workers: int = 8
+    max_trajectory_steps: Optional[int] = None
 
 
 @dataclass
