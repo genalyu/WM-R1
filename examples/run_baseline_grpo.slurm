@@ -138,7 +138,7 @@ SYSTEM_PROMPT="You are a helpful assistant."
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
 ROLLOUT_N=$((1 * NUM_NODES))
-NUM_ENVS=$((1 * ROLLOUT_N))  # env workers = rollout_batch_size * rollout_n
+NUM_ENVS=$((2 * ROLLOUT_N))  # env workers = rollout_batch_size * rollout_n
 
 # 数据集路径
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
@@ -204,7 +204,7 @@ python3 -m verl.trainer.main \
     data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
-    data.rollout_batch_size=1 \
+    data.rollout_batch_size=2 \
     worker.actor.model.model_path=${MODEL_PATH} \
     worker.actor.fsdp.torch_dtype=bf16 \
     worker.actor.optim.strategy=adamw_bf16 \
