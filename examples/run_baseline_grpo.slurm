@@ -137,8 +137,8 @@ SYSTEM_PROMPT="You are a helpful assistant."
 # 根据 Slurm 资源自动获取
 NUM_GPUS_PER_NODE=2
 NUM_NODES=$SLURM_JOB_NUM_NODES
-ROLLOUT_N=$((2 * NUM_NODES))
-NUM_ENVS=$((2 * ROLLOUT_N))  # env workers = rollout_batch_size * rollout_n
+ROLLOUT_N=$((1 * NUM_NODES))
+NUM_ENVS=$((1 * ROLLOUT_N))  # env workers = rollout_batch_size * rollout_n
 
 # 数据集路径
 TRAIN_FILES="/public/home/xlwang/genalyu/dataset/agentnet/agentnet_train_9k.jsonl"
@@ -204,7 +204,7 @@ python3 -m verl.trainer.main \
     data.max_response_length=1024 \
     data.max_pixels=2116800 \
     data.min_pixels=256 \
-    data.rollout_batch_size=2 \
+    data.rollout_batch_size=1 \
     worker.actor.model.model_path=${MODEL_PATH} \
     worker.actor.fsdp.torch_dtype=bf16 \
     worker.actor.optim.strategy=adamw_bf16 \
@@ -215,7 +215,7 @@ python3 -m verl.trainer.main \
     worker.actor.micro_batch_size_per_device_for_update=1 \
     worker.actor.micro_batch_size_per_device_for_experience=1 \
     worker.actor.use_torch_compile=False \
-    worker.rollout.gpu_memory_utilization=0.3 \
+    worker.rollout.gpu_memory_utilization=0.5 \
     worker.rollout.n=$ROLLOUT_N \
     worker.rollout.name="vllm" \
     worker.rollout.temperature=1.0 \
