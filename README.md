@@ -1,182 +1,184 @@
+# WM-R1: Training GUI Agents to Reason with World Models via Reinforcement Learning
 
-# ARPO: End-to-End Policy Optimization for GUI Agents with Experience Replay
+<div align="center">
 
-This repository contains the code and models for the paper:
+[中文文档](README_CN.md)
 
-> **ARPO: End-to-End Policy Optimization for GUI Agents with Experience Replay**  
-> *Fanbin Lu, Zhisheng Zhong, Shu Liu, Chi-Wing Fu, Jiaya Jia*  
-> CUHK, SmartMore, HKUST  
-> [[Paper](https://arxiv.org/abs/2505.16282)] • [[Project Page](https://github.com/dvlab-research/ARPO)] • [[Model on HF](https://huggingface.co/Fanbin/ARPO_UITARS1.5_7B)]
+</div>
+
+---
 
 ## Overview
 
-**ARPO (Agentic Replay Policy Optimization)** is a novel reinforcement learning framework designed to train **vision-language GUI agents** to complete **long-horizon desktop tasks**. It builds upon **Group Relative Policy Optimization (GRPO)** and introduces:
+WM-R1 is a reinforcement learning framework that trains GUI agents to reason with **World Models (WM)** — using a VLM-based simulator to replace expensive real-environment interaction during RL training.
 
-- **Distributed Rollouts**: Scalable task execution across parallel OSWorld environments with docker.  
-- **Multi-modal Input Support**: Processes long histories (15 steps) of screenshots + actions in an end-to-end way.
+Traditional GUI agent RL requires interacting with real emulators or devices at every step, which is slow and resource-intensive. WM-R1 replaces this with [Code2World](https://arxiv.org/abs/2602.09856) — a world model that predicts the *next GUI screenshot* by generating **renderable HTML code**. The agent can "imagine" the consequences of its actions in this virtual sandbox before committing, enabling efficient model-based RL.
 
-Access our [model](https://huggingface.co/Fanbin/ARPO_UITARS1.5_7B) on huggingface and view [training logs](https://wandb.ai/fanbinlu/arpo) on the Weights & Biases.
+<!-- <div align="center">
+<img src="assets/easyr1_grpo.png" alt="WM-R1 overview" width="700"/>
+</div> -->
 
-<p align="center">
-<img src="assets/traj_reward.png" alt="Trajectory reward during trainig" width="500">
-</p>
+## Key Features
 
-## 📊 Results on OSWorld
+- **World Model as Environment**: Code2World generates HTML that renders to PNG via Playwright, replacing the real Android emulator/desktop with a differentiable simulation
+- **Deep Reasoning via Thinking**: Agents use `<think>` blocks to probe the world model before acting — imagining outcomes and refining actions
+- **DAST Reward**: Dynamic Annealing Step-aware Trajectory reward balances task success with trajectory efficiency, with an annealed length budget that tightens over training
+- **Scalable Multi-Node Training**: Ray-based distributed architecture with FSDP sharding, vLLM rollout, and cross-node NCCL communication
+- **Baseline GRPO Mode**: Standard GRPO training without world model for fair comparison
 
-| Model                        |  128 training tasks | OSWorld overall|
-|-----------------------------|---------|-------|
-| UI-Tars-1.5                |68.7% | 23.5%   | 
-| UI-Tars-1.5 + GRPO         |72.9% | 26.0%   | 
-| **UI-Tars-1.5 + ARPO (Ours)** |83.9% | **29.9%** |
+## Architecture
 
-> Evaluated with a max of **15 steps per trajectory**.
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Training Loop                          │
+│                                                         │
+│  ┌──────────────┐    ┌──────────────┐                   │
+│  │  Actor Policy │◄──►│  vLLM Rollout│  (FSDP + vLLM)   │
+│  │ Qwen2.5-VL-3B│    │  (fast gen)  │                   │
+│  └──────┬───────┘    └──────────────┘                   │
+│         │                                               │
+│         ▼                                               │
+│  ┌──────────────┐    ┌──────────────┐                   │
+│  │  EnvWorker    │───►│  World Model  │  (GPU 0 per node)│
+│  │ (per env)    │◄───│  Code2World   │                   │
+│  └──────────────┘    │  Qwen3-VL-8B  │                   │
+│         │            └──────────────┘                   │
+│         ▼                                               │
+│  ┌──────────────┐                                       │
+│  │ DAST Reward   │  →  GRPO Advantage  →  PPO Update   │
+│  └──────────────┘                                       │
+└─────────────────────────────────────────────────────────┘
+```
 
----
+### GPU Layout (per node)
 
-## 🛠 Installation
+| GPU | Role |
+|-----|------|
+| GPU 0 | World Model server (Code2World, HTTP endpoint) |
+| GPU 1 | Training (FSDP actor + vLLM rollout) |
 
-### 1. Clone the repository and create environment
+## How It Works
+
+### Agent-World Model Interaction
+
+1. The agent observes the current screenshot and a task instruction
+2. Inside `<think>` blocks, the agent calls the world model: `call_wm(action='click(start_box=...)')` to predict what would happen
+3. Code2World returns HTML → rendered PNG of the predicted next state
+4. The agent reasons about the predicted outcome, potentially making multiple imagined calls
+5. The agent commits to a final `Action:` based on its reasoning
+
+### DAST Reward (Dynamic Annealing Step-aware Trajectory)
+
+```
+R = α · R_success + β · R_length
+
+R_success = 1.0 if task completed, 0.0 otherwise
+R_length  = dynamic based on training progress and trajectory length
+```
+
+The length budget **anneals** from `max_steps` (lenient, early training) toward `avg_len_ref` (concise, late training), encouraging progressively more efficient trajectories.
+
+<!-- <div align="center">
+<img src="assets/traj_reward.png" alt="DAST reward" width="500"/>
+</div> -->
+
+## Supported Environments
+
+| Environment | Description | Status |
+|-------------|-------------|--------|
+| **AgentNet** | Desktop GUI tasks (Ubuntu, Windows, macOS) | Primary training benchmark |
+| **AndroidWorld** | Android app tasks | Evaluation via Code2World |
+| **OSWorld** | Open-domain OS tasks | Dataset support |
+
+## Quick Start
+
+### Prerequisites
 
 ```bash
-git clone --recurse-submodules https://github.com/dvlab-research/ARPO.git
-cd ARPO
+# Two conda environments needed
+conda create -n train python=3.10    # Training (veRL + Ray)
+conda create -n wm python=3.10       # World Model (Playwright + Qwen3-VL)
 
-# Create and activate Conda environment
-conda create -n arpo python=3.10
-conda activate arpo
-
-# Install Python dependencies
+# Install training dependencies
 pip install -r requirements.txt
+
+# Install world model dependencies (in wm env)
+pip install -r Code2World/requirements.txt
+playwright install chromium
 ```
 
-### 2. Install OSWorld
-Follow the origin installation guide of [OSWorld](https://github.com/xlang-ai/OSWorld) if you only want to evaluate the model. If you want to train with GRPO, you are required to pip install it.
-```bash
-cd OSWorld
-pip install -e .
-cd ..
-```
-
-> 💡 We strongly recommend running a full evaluation **with Docker** before training to prepare the docker image, Ubuntu VM data, and cache_dir required.
-
-
-## ⚙️ Setup for Evaluation with OSWorld
-
-To evaluate ARPO on the OSWorld benchmark with the [released model](https://huggingface.co/Fanbin/ARPO_UITARS1.5_7B) using Docker-based virtual environments, follow these steps:
-
-### 1. **Prepare the Environment**
-
-Ensure you have correctly installed [OSWorld](https://github.com/xlang-ai/OSWorld) by following its Docker setup instructions. Once OSWorld is set up:
+### Data Preparation
 
 ```bash
-nohup bash start_server.sh &
+# Prepare AgentNet dataset
+python scripts/data_prepare.py \
+    --input agentnet_ubuntu_5k.jsonl agentnet_win_mac_18k.jsonl \
+    --output data/ \
+    --train_size 9000 --test_size 1000
 ```
 
-### 2. **Run Evaluation Script**
-
-Navigate into the OSWorld directory and execute the evaluation script:
+### Training
 
 ```bash
-cd OSWorld
+# Submit Slurm job (multi-node, 2 GPUs per node)
+sbatch examples/run_agentnet.slurm
 
-python run_multienv_uitars.py \
-    --headless \
-    --observation_type screenshot \
-    --max_steps 15 \
-    --max_trajectory_length 15 \
-    --temperature 0.6 \
-    --model ui-tars \
-    --action_space pyautogui \
-    --num_envs 8 \
-    --result_dir ./results/ \
-    --test_all_meta_path ./evaluation_examples/test_all.json \
-    --trial-id 0 \
-    --server_ip http://127.0.0.1
+# Or baseline GRPO without world model
+sbatch examples/run_baseline_grpo.slurm
 ```
 
-### ✅ Parameters Explained
+### Key Configuration
 
-- `--headless`: Enables headless mode (no GUI rendering).
-- `--observation_type screenshot`: Use visual observations for the agent.
-- `--max_steps` / `--max_trajectory_length`: Limit per-task interaction steps.
-- `--temperature`: Sampling temperature for model output.
-- `--model`: Name of the model.
-- `--num_envs`: Number of parallel environments (VMs).
-- `--result_dir`: Directory to store evaluation results.
-- `--test_all_meta_path`: JSON file with evaluation task metadata.
-- `--trial-id`: ID for the evaluation trial.
-- `--server_ip`: IP of the evaluation server (usually localhost).
+```yaml
+# Core training parameters
+env.use_wm=True                    # Enable world model
+env.max_steps=15                   # Max interaction steps per task
+env.n_wm_max=5                     # Max imaginary WM calls per step
+data.rollout_batch_size=4          # Tasks per training batch
+data.max_trajectory_steps=5        # Keep only last N steps in prompt
 
-> You will find vmware_vm_data/, docker_vm_data/, and cache/ folders under the OSWorld after evaluation.
----
+# Reward
+algorithm.adv_estimator="wm_r1"    # DAST advantage estimator
+reward.alpha=1.0                   # Success reward weight
+reward.beta=0.5                    # Length reward weight
 
-## ⚙️ Setup for GRPO Training
-
-```bash
-# Link evaluation examples and cache
-ln -s $(pwd)/OSWorld/evaluation_examples ./
-mkdir cache_dirs/
-ln -s $(pwd)/OSWorld/cache ./cache_dirs/cache_0
-ln -s $(pwd)/OSWorld/vmware_vm_data ./
-ln -s $(pwd)/OSWorld/docker_vm_data ./
+# Model
+worker.actor.model.model_path=Qwen/Qwen2.5-VL-3B-Instruct
 ```
 
-To run Docker without `sudo`:
+## Models
 
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
+| Model | Role | Parameters | Source |
+|-------|------|-----------|--------|
+| Qwen2.5-VL-3B-Instruct | Agent policy | 3B | [Qwen](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) |
+| Code2World | World Model | 8B | [GD-ML/Code2World](https://huggingface.co/GD-ML/Code2World) |
+
+## Project Structure
+
+```
+WM-R1/
+├── verl/                          # RL training framework
+│   ├── trainer/
+│   │   ├── main.py               # Entry point
+│   │   ├── ray_trainer.py        # Core training loop
+│   │   ├── gui_agent.py          # Environment + action parsing
+│   │   └── core_algos.py         # PPO/GRPO algorithms
+│   ├── workers/                   # FSDP distributed workers
+│   └── utils/reward_score/
+│       └── wm_r1.py              # DAST reward function
+├── Code2World/                    # World Model
+│   ├── android_world/agents/
+│   │   ├── wm_server.py          # HTTP server for WM inference
+│   │   └── wm_utils.py           # Rendering & API utilities
+│   └── ...
+├── examples/                      # Slurm deployment scripts
+└── scripts/                       # Data preparation tools
 ```
 
----
+## Acknowledgements
 
-## Training ARPO/GRPO with OSWorld
-
-### Single Node (subset training: 32 tasks)
-If you only have one node, we suggest training on a subset of OSWorld tasks with at most 16 Docker environments.
-```bash
-RAY_PORT=2468
-RAY_HEAD_IP=<Your IP>
-ray start --head --port=$RAY_PORT --resources='{"docker:'$RAY_HEAD_IP'": 128}'
-bash ./examples/osworld_subset32.sh
-```
-
-### Multi-Node Setup with Ray (e.g. 8 nodes, 128 envs)
-
-On **Ray master node**:
-
-```bash
-RAY_PORT=2468
-RAY_HEAD_IP=<Your IP>
-ray start --head --port=$RAY_PORT --resources='{"docker:'$RAY_HEAD_IP'": 128}'
-```
-
-On **Ray slave nodes** (with GPU):
-
-```bash
-ray start --address=$RAY_HEAD_IP:$RAY_PORT --num-gpus=8 --resources='{"docker:'$CURRENT_IP'": 128}'
-```
-
-Or (CPU only):
-
-```bash
-ray start --address=$RAY_HEAD_IP:$RAY_PORT --resources='{"docker:'$CURRENT_IP'": 128}'
-```
-
-Then run:
-
-```bash
-bash ./examples/osworld_full_arpo.sh
-```
-
----
-
-## 🔗 Related Projects
-
-- [OSWorld](https://github.com/FanbinLu/OSWorld) — Realistic GUI environments for multimodal agents modified for GRPO training.
-- [EasyR1](https://github.com/hiyouga/EasyR1) An efficient, scalable, multi-modality RL training framework based on veRL, supporting advanced VLMs and algorithms like GRPO.
----
-
-## 📄 Citation
-
-If you find ARPO useful, please consider citing our work.
+- **[veRL](https://github.com/volcengine/verl)**: RL training framework by ByteDance
+- **[Code2World](https://arxiv.org/abs/2602.09856)**: World model for GUI state prediction
+- **[Qwen2.5-VL](https://arxiv.org/abs/2502.13923)**: Vision-language model family
+- **[AgentNet](https://arxiv.org/abs/2407.05972)**: GUI agent dataset
+- **[AndroidWorld](https://github.com/google-research/android_world)**: Android evaluation framework
