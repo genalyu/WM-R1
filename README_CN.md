@@ -1,22 +1,18 @@
 # WM-R1: 通过强化学习训练 GUI 智能体与世界模型协同推理
-
-<div align="center">
-
-[English](README.md)
-
-</div>
-
----
-
+**[![Paper](https://img.shields.io/badge/arXiv-WM—R1-blue)](https://arxiv.org/abs/2606.09961)** · **[中文文档](README_CN.md)**
 ## 项目简介
 
 WM-R1 是一个强化学习框架，用于训练 GUI 智能体利用 **世界模型（World Model）** 进行推理——用基于 VLM 的模拟器替代昂贵的真实环境交互。
 
+<div align="center">
+<img src="assets/comparison.png" alt="对比" width="800"/>
+</div>
+
 传统的 GUI 智能体 RL 训练需要在每一步与真实模拟器或设备进行交互，既慢又消耗资源。WM-R1 使用 [Code2World](https://arxiv.org/abs/2602.09856) ——一个通过生成 **可渲染 HTML 代码** 来预测*下一帧 GUI 截图*的世界模型。智能体可以在这个虚拟沙盒中"想象"其动作的后果，从而实现高效的 model-based RL。
 
-<!-- <div align="center">
-<img src="assets/easyr1_grpo.png" alt="WM-R1 架构" width="700"/>
-</div> -->
+<div align="center">
+<img src="assets/framework.png" alt="WM-R1 框架" width="800"/>
+</div>
 
 ## 核心特性
 
@@ -78,9 +74,13 @@ R_长度 = 根据训练进度和轨迹长度动态计算
 
 长度预算从 `max_steps`（宽松，训练初期）向 `avg_len_ref`（紧凑，训练后期）**动态退火**，引导智能体逐步学会更高效的操作轨迹。
 
-<!-- <div align="center">
-<img src="assets/traj_reward.png" alt="DAST 奖励" width="500"/>
-</div> -->
+## 实验结果
+
+<div align="center">
+<img src="assets/training_curve.png" alt="训练曲线" width="600"/>
+</div>
+
+OSWorld 上的训练曲线（基于 Qwen2.5-VL-7B）。相比于在真实环境中采用 GRPO 训练的 UI-R1（成功率为 31.5\%），WM-R1 收敛更快，且最终成功率更高（42.7\%）。阴影区域表示基于三个随机种子计算得出的一个标准差范围。
 
 ## 支持的环境
 

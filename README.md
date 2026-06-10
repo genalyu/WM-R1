@@ -1,22 +1,19 @@
 # WM-R1: Training GUI Agents to Reason with World Models via Reinforcement Learning
 
-<div align="center">
-
-[中文文档](README_CN.md)
-
-</div>
-
----
-
+**[![Paper](https://img.shields.io/badge/arXiv-WM—R1-blue)](https://arxiv.org/abs/2606.09961)** · **[中文文档](README_CN.md)**
 ## Overview
 
 WM-R1 is a reinforcement learning framework that trains GUI agents to reason with **World Models (WM)** — using a VLM-based simulator to replace expensive real-environment interaction during RL training.
 
+<div align="center">
+<img src="assets/comparison.png" alt="Comparison" width="800"/>
+</div>
+
 Traditional GUI agent RL requires interacting with real emulators or devices at every step, which is slow and resource-intensive. WM-R1 replaces this with [Code2World](https://arxiv.org/abs/2602.09856) — a world model that predicts the *next GUI screenshot* by generating **renderable HTML code**. The agent can "imagine" the consequences of its actions in this virtual sandbox before committing, enabling efficient model-based RL.
 
-<!-- <div align="center">
-<img src="assets/easyr1_grpo.png" alt="WM-R1 overview" width="700"/>
-</div> -->
+<div align="center">
+<img src="assets/framework.png" alt="WM-R1 Framework" width="800"/>
+</div>
 
 ## Key Features
 
@@ -26,7 +23,7 @@ Traditional GUI agent RL requires interacting with real emulators or devices at 
 - **Scalable Multi-Node Training**: Ray-based distributed architecture with FSDP sharding, vLLM rollout, and cross-node NCCL communication
 - **Baseline GRPO Mode**: Standard GRPO training without world model for fair comparison
 
-## Architecture
+## Code Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -78,9 +75,13 @@ R_length  = dynamic based on training progress and trajectory length
 
 The length budget **anneals** from `max_steps` (lenient, early training) toward `avg_len_ref` (concise, late training), encouraging progressively more efficient trajectories.
 
-<!-- <div align="center">
-<img src="assets/traj_reward.png" alt="DAST reward" width="500"/>
-</div> -->
+## Results
+
+<div align="center">
+<img src="assets/training_curve.png" alt="Training Curves" width="600"/>
+</div>
+
+Training curves on OSWorld (Qwen2.5-VL-7B). WM-R1 converges faster and reaches a higher final success rate (42.7\%) than UI-R1 (31.5\%) trained with real-environment GRPO. Shaded regions denote one standard deviation across three random seeds.
 
 ## Supported Environments
 
