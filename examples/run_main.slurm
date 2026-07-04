@@ -1,12 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=wm_r1
+#SBATCH --partition=H200
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --output=logs/agentnet_%j.out
-#SBATCH --error=logs/agentnet_%j.err
+#SBATCH --output=logs/main_%j.out
+#SBATCH --error=logs/main_%j.err
 
 # ============================================================
 # WM-R1 主实验：使用 World Model 进行 RL 训练
@@ -16,10 +17,10 @@
 # --- 用户配置区（按需修改） ---
 CONDA_ENV="wmr1"                    # 训练环境
 CONDA_WM_ENV="wmr1"                 # WM 服务环境（可和训练同一个，也可分开）
-MODEL_PATH="Qwen/Qwen2.5-VL-3B-Instruct"   # Agent 策略模型
-WM_MODEL_PATH="Qwen/Qwen3-VL-8B"           # World Model
-TRAIN_FILES="./data/agentnet_train.jsonl"
-VAL_FILES="./data/agentnet_test.jsonl"
+MODEL_PATH="Qwen2.5-VL-3B-Instruct"   # Agent 策略模型
+WM_MODEL_PATH="Code2World"           # World Model
+TRAIN_FILES="./data/guir1/train.jsonl"
+VAL_FILES="./data/guir1/train.jsonl"
 
 # --- 项目根目录（自动检测，不需要改） ---
 PROJECT_DIR="$(cd "$(dirname "$(dirname "$(realpath "$0")")")" && pwd)"
@@ -110,7 +111,7 @@ sleep 5
 # ============================================================
 # 训练配置
 # ============================================================
-EXPERIMENT_NAME="wm_r1_android"
+EXPERIMENT_NAME="wm_r1_main"
 NUM_GPUS_PER_NODE=1
 ROLLOUT_N=2
 NUM_ENVS=$((2 * ROLLOUT_N))  # = rollout_batch_size * rollout_n
@@ -135,13 +136,13 @@ python3 -m verl.trainer.main \
     env.use_local_wm=False \
     env.wm_http_url="${WM_HTTP_URL}" \
     env.num_envs=$NUM_ENVS \
-    env.max_steps=15 \
+    env.max_steps=20 \
     env.n_wm_max=5 \
     \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="You are a helpful assistant." \
-    data.max_prompt_length=28000 \
+    data.max_prompt_length=10240 \
     data.max_response_length=2048 \
     data.max_pixels=4194304 \
     data.min_pixels=256 \
@@ -173,6 +174,7 @@ python3 -m verl.trainer.main \
     \
     reward.alpha=1.0 \
     reward.beta=0.5 \
+    reward.gamma=0.1 \
     data.val_batch_size=2
 
 # --- 清理 ---
