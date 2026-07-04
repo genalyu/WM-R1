@@ -172,3 +172,7 @@ outputs/
 checkpoints/
 wandb/
 logs/
+
+# data & models (large files, not for GitHub)
+data/
+models/
