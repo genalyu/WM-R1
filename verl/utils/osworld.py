@@ -26,6 +26,8 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from PIL import Image
+
+IGNORE_INDEX = -100  # label value for ignored tokens (consistent with CrossEntropyLoss ignore_index)
 from PIL.Image import Image as ImageObject
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, ProcessorMixin

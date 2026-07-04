@@ -249,7 +249,7 @@ class DataProto:
         size_of_tensordict /= 1024**3
 
         message = f"Size of tensordict: {size_of_tensordict} GB, size of non_tensor_batch: {size_of_numpy_array} GB."
-        print({prefix}, {message})
+        print(f"{prefix} {message}")
 
     def check_consistency(self):
         """Check the consistency of the DataProto. Mainly for batch and non_tensor_batch

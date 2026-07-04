@@ -276,10 +276,13 @@ class RayPPOTrainer:
                 )
 
         if (
-            config.algorithm.adv_estimator in (AdvantageEstimator.GRPO, AdvantageEstimator.RLOO)
+            config.algorithm.adv_estimator
+            in (AdvantageEstimator.GRPO, AdvantageEstimator.RLOO, AdvantageEstimator.WM_R1)
             and config.worker.rollout.n == 1
         ):
-            raise ValueError("GRPO and RLOO algorithm need `config.worker.rollout.n > 1`.")
+            raise ValueError(
+                "GRPO, RLOO and WM_R1 algorithms need `config.worker.rollout.n > 1`."
+            )
         
         print(config)
 
@@ -801,7 +804,8 @@ class RayPPOTrainer:
                 return
 
         rollout_n = self.config.worker.rollout.n
-        for _ in tqdm(range(self.config.trainer.total_episodes), desc="Episode", position=0):
+        for episode_idx in tqdm(range(self.config.trainer.total_episodes), desc="Episode", position=0):
+            self.current_episode = episode_idx
             iterator = iter(tqdm(self.train_dataloader, desc="Running step", position=1))
 
             # batch_dict_next_batch = next(iterator)
@@ -934,7 +938,7 @@ class RayPPOTrainer:
                             n_wm_list = batch.batch["n_wm"].squeeze(-1).tolist()
                             traj_len_list = batch.batch["traj_len"].squeeze(-1).tolist()
                             eval_results_list = batch.batch["eval_results"].tolist()
-                            
+
                             rewards = []
                             for i in range(len(eval_results_list)):
                                 r = compute_wm_r1_reward(
@@ -942,10 +946,14 @@ class RayPPOTrainer:
                                     traj_len=traj_len_list[i],
                                     max_steps=self.config.env.max_steps,
                                     avg_len_ref=getattr(self.config.env, "avg_len_ref", 5.0),
-                                    current_episode=self.global_step, # Assuming global_step is current episode
+                                    current_episode=self.current_episode,
                                     total_episodes=self.config.trainer.total_episodes,
                                     alpha=self.config.reward.alpha,
                                     beta=self.config.reward.beta,
+                                    gamma=self.config.reward.gamma,
+                                    n_wm=n_wm_list[i],
+                                    n_wm_max=self.config.env.n_wm_max,
+                                    avg_nwm_ref=self.config.reward.avg_nwm_ref,
                                 )
                                 rewards.append(r)
                             

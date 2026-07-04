@@ -25,12 +25,15 @@ from .flash_attention_utils import flash_attention_forward
 try:
     from transformers.models.qwen2_vl.modeling_qwen2_vl import (
         Qwen2VLAttention,
+        Qwen2VLCausalLMOutputWithPast,
         apply_multimodal_rotary_pos_emb,
         repeat_kv,
     )
     from transformers.models.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
 except ImportError:
     pass
+
+from torch.nn import CrossEntropyLoss
 
 
 def get_rope_index(

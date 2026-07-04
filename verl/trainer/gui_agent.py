@@ -11,7 +11,7 @@ import base64
 import datetime
 import traceback
 import urllib.request
-import traceback
+import urllib.error
 import torch
 import numpy as np
 import sys
@@ -690,20 +690,20 @@ def parsing_response_to_pyautogui_code(responses, image_height: int, image_width
             else:
                 key_to_press = action_inputs.get("press", "")
 
-            if hotkey == "arrowleft":
-                hotkey = "left"
+            if key_to_press == "arrowleft":
+                key_to_press = "left"
 
-            elif hotkey == "arrowright":
-                hotkey = "right"
-            
-            elif hotkey == "arrowup":
-                hotkey = "up"
-            
-            elif hotkey == "arrowdown":
-                hotkey = "down"
-            
-            elif hotkey == "space":
-                hotkey = " "
+            elif key_to_press == "arrowright":
+                key_to_press = "right"
+
+            elif key_to_press == "arrowup":
+                key_to_press = "up"
+
+            elif key_to_press == "arrowdown":
+                key_to_press = "down"
+
+            elif key_to_press == "space":
+                key_to_press = " "
                 
             if key_to_press:
                 # Simulate pressing a single key
@@ -904,8 +904,8 @@ class EnvWorker():
             print('Baseline mode: no world model.')
             self.env = None
 
-        self.is_init = False
-        self.is_done = False
+        self._is_init = False
+        self._is_done = False
         self.max_steps = max_steps
         # self.parser = Qwen2VLParser()
 
@@ -1086,7 +1086,7 @@ class EnvWorker():
         self.instruction = task_config.get("instruction", None)
         self.task_config = task_config
         self.step_counter = 0
-        self.is_done = False
+        self._is_done = False
 
         self.reset_train_tensors()
 
@@ -1094,13 +1094,13 @@ class EnvWorker():
         if self.env is None:
             init_screenshot = task_config.get("init_screenshot", None)
             if init_screenshot is None:
-                self.is_init = True
-                self.is_done = True
+                self._is_init = True
+                self._is_done = True
                 print('No init_screenshot in task_config for baseline reset')
                 return {
                     "env_idx": self.worker_idx,
                     "obs_messages": None,
-                    "is_done": self.is_done,
+                    "is_done": self._is_done,
                     'format_reward': 0.0
                 }
 
@@ -1123,12 +1123,12 @@ class EnvWorker():
             except Exception as e:
                 print(f"Failed to load init_screenshot: {e}")
                 print('screenshot load error: ', traceback.format_exc())
-                self.is_init = True
-                self.is_done = True
+                self._is_init = True
+                self._is_done = True
                 return {
                     "env_idx": self.worker_idx,
                     "obs_messages": None,
-                    "is_done": self.is_done,
+                    "is_done": self._is_done,
                     'format_reward': 0.0
                 }
 
@@ -1171,13 +1171,13 @@ class EnvWorker():
 
             self.history_images = [init_screenshot]
             self.history_messages = init_messages
-            self.is_init = True
+            self._is_init = True
             self.process_message(init_messages)
 
             return {
                 'env_idx': self.worker_idx,
                 'obs_messages': self.history_messages,
-                'is_done': self.is_done,
+                'is_done': self._is_done,
                 'format_reward': 0.0
             }
 
@@ -1193,18 +1193,18 @@ class EnvWorker():
                 trial_time += 1
         
         if trial_time >= 8:
-            self.is_init = True
-            self.is_done = True
+            self._is_init = True
+            self._is_done = True
             print('Env reset failed after 8 trials: ', task_config)
             return {
                 "env_idx": self.worker_idx,
                 "obs_messages": None,
-                "is_done": self.is_done,
+                "is_done": self._is_done,
                 'format_reward': 0.0
             }
 
         # self.agent.reset()
-        self.is_init = True
+        self._is_init = True
 
 
         init_image = obs["screenshot"]
@@ -1226,12 +1226,12 @@ class EnvWorker():
         except Exception as e:
             print(f"Failed to process init_screenshot: {e}")
             print('screenshot error: ', traceback.format_exc())
-            self.is_init = True
-            self.is_done = True
+            self._is_init = True
+            self._is_done = True
             return {
                 "env_idx": self.worker_idx,
                 "obs_messages": None,
-                "is_done": self.is_done,
+                "is_done": self._is_done,
                 'format_reward': 0.0
             }
 
@@ -1278,18 +1278,19 @@ class EnvWorker():
         return {
             'env_idx': self.worker_idx,
             'obs_messages': self.history_messages,
-            'is_done': self.is_done,
+            'is_done': self._is_done,
             'format_reward': 0.0
         }
     
     def step(self, prediction):
-        self.is_init = False
+        self._is_init = False
         
         # Check if the prediction contains a World Model interaction inside <think>
-        # Format: <think> ... call_wm(action='...') ... </think>
+        # Format: <think> ... call_wm(action='...') ...  </think>
         # Skip this check if n_wm_max is 0 (ablation: no WM deep thinking)
+        # Also enforce the n_wm_max hard limit
         wm_call_match = None
-        if self.n_wm_max > 0:
+        if self.n_wm_max > 0 and self.n_wm < self.n_wm_max:
             wm_call_match = re.search(r"<think>.*?call_wm\(action='(.*?)'\).*?</think>", prediction, re.DOTALL)
         
         is_imaginary = False
@@ -1413,11 +1414,11 @@ class EnvWorker():
 
         if not is_imaginary or self.env is None:
             if step_done:
-                self.is_done = True
+                self._is_done = True
 
             self.step_counter += 1
             if self.step_counter == self.max_steps:
-                self.is_done = True
+                self._is_done = True
 
         if self.env is not None:
             self.env.pause()
@@ -1431,15 +1432,15 @@ class EnvWorker():
             }]
         })
 
-        if not self.is_done:
+        if not self._is_done:
             if obs_screenshot is None:
-                self.is_done = True
+                self._is_done = True
                 # failed to get screenshot
                 self.process_message(self.history_messages[-1:]) # gpt answer only
                 return {
                     'env_idx': self.worker_idx,
                     'obs_messages': None,
-                    'is_done': self.is_done,
+                    'is_done': self._is_done,
                     'format_reward': format_reward,
                     'n_wm': self.n_wm
                 }
@@ -1469,7 +1470,7 @@ class EnvWorker():
             return {
                 'env_idx': self.worker_idx,
                 'obs_messages': self.history_messages,
-                'is_done': self.is_done,
+                'is_done': self._is_done,
                 'format_reward': format_reward,
                 'n_wm': self.n_wm
             }
@@ -1478,7 +1479,7 @@ class EnvWorker():
             return {
                 'env_idx': self.worker_idx,
                 'obs_messages': None,
-                'is_done': self.is_done,
+                'is_done': self._is_done,
                 'format_reward': format_reward,
                 'n_wm': self.n_wm
             }
@@ -1504,7 +1505,7 @@ class EnvWorker():
         return self.history_images
     
     def is_done(self):
-        return self.is_done
+        return self._is_done
 
     def is_init(self):
-        return self.is_init
+        return self._is_init

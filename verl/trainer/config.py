@@ -111,6 +111,8 @@ class EnvConfig:
 class RewardConfig:
     alpha: float = 1.0
     beta: float = 0.5
+    gamma: float = 0.0       # WM call count reward weight (论文公式 1 的 γ)
+    avg_nwm_ref: float = 2.0 # 目标 WM 调用次数参考值 (训练后期收敛目标)
 
 @dataclass
 class PPOConfig:
