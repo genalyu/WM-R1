@@ -98,6 +98,7 @@ class EnvConfig:
     num_envs: int = 32
     max_steps: int = 15
     screen_size: Tuple[int, int] = (1920, 1080)
+    platform: str = "desktop"  # "desktop" | "android"
     use_wm: bool = False
     use_local_wm: bool = True
     wm_model_name: Optional[str] = None

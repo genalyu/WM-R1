@@ -261,7 +261,7 @@ class WorldModelEnv:
         judge_prompt = f"""You are an objective judge evaluating whether a GUI agent has successfully completed a task.
 The user's original instruction is: "{instruction}"
 
-Analyze the provided final screenshot of the computer screen. 
+Analyze the provided final screenshot of the device screen.
 Determine if the goal described in the instruction has been achieved.
 
 Output your judgment in the following JSON format:
@@ -376,6 +376,107 @@ Action: finished(content='Task completed successfully')
 WRONG: Action: Click on the search button in the top-right corner.
 WRONG: Action: I should click on the VLC icon to open it.
 WRONG: Action: Opening the file menu now.
+
+The Action must ALWAYS be a Python function call, never a sentence.
+
+## User Instruction
+{instruction}
+"""
+
+# ============================================================
+# Android System Prompts (mobile action space)
+# ============================================================
+
+android_system_prompt_no_think = """You are a GUI agent operating an Android phone. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+You MUST output exactly in this format:
+```
+Action: <a Python function call from the action space>
+```
+
+**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. Do NOT include any Thought, <think>, or </think> tags. Only output the Action line.
+
+## Action Space (use these EXACT function names with proper Python syntax)
+
+tap(start_box='<|box_start|>(x1,y1)<|box_end|>')
+long_press(start_box='<|box_start|>(x1,y1)<|box_end|>')
+type(content='xxx')
+scroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down or up or right or left')
+press_back()
+press_home()
+open_app(app_name='xxx')
+wait()
+finished(content='xxx')
+
+## Examples of CORRECT output:
+Action: tap(start_box='<|box_start|>(540,1200)<|box_end|>')
+
+Action: type(content='Hello World')
+
+Action: scroll(start_box='<|box_start|>(540,1200)<|box_end|>', direction='up')
+
+Action: open_app(app_name='Settings')
+
+Action: finished(content='Task completed successfully')
+
+## Examples of WRONG output (DO NOT do this):
+WRONG: Thought: I need to open the settings app.
+WRONG: Action: Tap on the settings icon.
+WRONG: <think> I should call_wm(action='tap') </think>
+
+The Action must ALWAYS be a Python function call, never a sentence.
+
+## User Instruction
+{instruction}
+"""
+
+android_system_prompt = """You are a GUI agent operating an Android phone. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+You MUST output exactly in this format:
+```
+Thought: <your reasoning in natural English>
+Action: <a Python function call from the action space>
+```
+
+**IMPORTANT**: The Action line MUST be a valid Python function call. Do NOT write natural language descriptions. The Action must be executable Python code. Do NOT output any <think> or </think> tags.
+
+## Action Space (use these EXACT function names with proper Python syntax)
+
+tap(start_box='<|box_start|>(x1,y1)<|box_end|>')
+long_press(start_box='<|box_start|>(x1,y1)<|box_end|>')
+type(content='xxx')
+scroll(start_box='<|box_start|>(x1,y1)<|box_start|>', direction='down or up or right or left')
+press_back()
+press_home()
+open_app(app_name='xxx')
+wait()
+finished(content='xxx')
+
+## Examples of CORRECT output:
+Thought: I need to open the Settings app. I can see the Settings icon on the home screen.
+Action: tap(start_box='<|box_start|>(540,1200)<|box_end|>')
+
+Thought: The search bar is visible at the top. I will tap it to enter a search query.
+Action: tap(start_box='<|box_start|>(540,120)<|box_end|>')
+
+Thought: I need to type the search query into the text field.
+Action: type(content='coffee shops nearby')
+
+Thought: The list is too long. Let me scroll down to find more options.
+Action: scroll(start_box='<|box_start|>(540,1200)<|box_end|>', direction='up')
+
+Thought: I need to go back to the previous screen.
+Action: press_back()
+
+Thought: The task is complete. I have successfully found the information.
+Action: finished(content='Found the nearest coffee shop')
+
+## Examples of WRONG output (DO NOT do this):
+WRONG: Action: Tap on the settings icon.
+WRONG: Action: I should scroll down to see more.
+WRONG: Action: Opening the camera app now.
 
 The Action must ALWAYS be a Python function call, never a sentence.
 
@@ -878,13 +979,25 @@ class EnvWorker():
 
         self.model = 'uitars'
 
-        # Baseline 和 ablation 模式不需要输出 Thought/<think>，只输出 Action
-        if not self.use_wm or self.n_wm_max == 0:
-            self.system_prompt = uitars_system_prompt_no_think
-            print(f'Using no-think system prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+        # Determine platform (desktop or android)
+        self.platform = getattr(config.env, "platform", "desktop")
+
+        # Select system prompt based on platform and mode
+        if self.platform == "android":
+            if not self.use_wm or self.n_wm_max == 0:
+                self.system_prompt = android_system_prompt_no_think
+                print(f'Using Android no-think prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+            else:
+                self.system_prompt = android_system_prompt
+                print(f'Using Android think prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
         else:
-            self.system_prompt = uitars_system_prompt
-            print(f'Using think system prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+            # Desktop (default)
+            if not self.use_wm or self.n_wm_max == 0:
+                self.system_prompt = uitars_system_prompt_no_think
+                print(f'Using desktop no-think prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
+            else:
+                self.system_prompt = uitars_system_prompt
+                print(f'Using desktop think prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
 
         if self.use_wm:
             print('Start to create world model env.')
@@ -1310,11 +1423,16 @@ class EnvWorker():
                 actions = [f"Imagined: {imagined_action}"]
             else:
                 # Regular turn: also use World Model for simulation
+                # Resolution: Android = 2400×1080 (portrait), Desktop = 1080×1920 (landscape)
+                if self.platform == "android":
+                    parse_h, parse_w = 2400, 1080
+                else:
+                    parse_h, parse_w = 1080, 1920
                 parsed_responses = parse_action_to_structure_output(
                     prediction,
                     self.action_parse_res_factor,
-                    1080, # height
-                    1920, # width
+                    parse_h,
+                    parse_w,
                     self.model_type,
                     self.max_pixels,
                     self.min_pixels
