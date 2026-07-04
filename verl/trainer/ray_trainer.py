@@ -54,7 +54,7 @@ from . import core_algos
 from .config import PPOConfig
 from .metrics import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics, reduce_metrics
 
-from ..utils.reward_score.wm_r1 import compute_wm_r1_reward
+from ..utils.reward_score.wm_r1 import compute_wm_r1_reward, compute_group_stats
 from .gui_agent import EnvWorker
 from .replay_buffer import ReplayBuffer
 
@@ -938,22 +938,28 @@ class RayPPOTrainer:
                             n_wm_list = batch.batch["n_wm"].squeeze(-1).tolist()
                             traj_len_list = batch.batch["traj_len"].squeeze(-1).tolist()
                             eval_results_list = batch.batch["eval_results"].tolist()
+                            uid_list = batch.non_tensor_batch["uid"]
+
+                            # 按 task_id 分组计算统计量 (p=c/N, L_ref, N_WM_ref)
+                            group_stats = compute_group_stats(
+                                n_wm_list, traj_len_list, eval_results_list, uid_list
+                            )
 
                             rewards = []
                             for i in range(len(eval_results_list)):
+                                s = group_stats[uid_list[i]]
                                 r = compute_wm_r1_reward(
                                     is_success=eval_results_list[i] > 0.5,
                                     traj_len=traj_len_list[i],
                                     max_steps=self.config.env.max_steps,
-                                    avg_len_ref=getattr(self.config.env, "avg_len_ref", 5.0),
-                                    current_episode=self.current_episode,
-                                    total_episodes=self.config.trainer.total_episodes,
                                     alpha=self.config.reward.alpha,
                                     beta=self.config.reward.beta,
                                     gamma=self.config.reward.gamma,
+                                    p=s["p"],
+                                    L_ref=s["L_ref"],
                                     n_wm=n_wm_list[i],
                                     n_wm_max=self.config.env.n_wm_max,
-                                    avg_nwm_ref=self.config.reward.avg_nwm_ref,
+                                    N_WM_ref=s["N_WM_ref"],
                                 )
                                 rewards.append(r)
                             
