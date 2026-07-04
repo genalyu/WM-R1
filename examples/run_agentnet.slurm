@@ -110,7 +110,7 @@ sleep 5
 # ============================================================
 # 训练配置
 # ============================================================
-EXPERIMENT_NAME="wm_r1"
+EXPERIMENT_NAME="wm_r1_android"
 NUM_GPUS_PER_NODE=1
 ROLLOUT_N=2
 NUM_ENVS=$((2 * ROLLOUT_N))  # = rollout_batch_size * rollout_n
@@ -119,7 +119,7 @@ NUM_ENVS=$((2 * ROLLOUT_N))  # = rollout_batch_size * rollout_n
 # 启动训练
 # ============================================================
 python3 -m verl.trainer.main \
-    trainer.project_name="wm-r1-agentnet" \
+    trainer.project_name="wm-r1-android" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
     trainer.logger="['console', 'wandb']" \
     trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
@@ -130,11 +130,13 @@ python3 -m verl.trainer.main \
     trainer.val_freq=999999 \
     trainer.total_episodes=15 \
     \
+    env.platform="android" \
     env.use_wm=True \
     env.use_local_wm=False \
     env.wm_http_url="${WM_HTTP_URL}" \
     env.num_envs=$NUM_ENVS \
     env.max_steps=15 \
+    env.n_wm_max=5 \
     \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
