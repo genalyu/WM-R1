@@ -142,7 +142,7 @@ python3 -m verl.trainer.main \
     data.train_files="${TRAIN_FILES}" \
     data.val_files="${VAL_FILES}" \
     data.format_prompt="You are a helpful assistant." \
-    data.max_prompt_length=10240 \
+    data.max_prompt_length=20480 \
     data.max_response_length=2048 \
     data.max_pixels=4194304 \
     data.min_pixels=256 \
