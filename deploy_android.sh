@@ -17,7 +17,7 @@
 PROJECT_DIR="$HOME/WM-R1"           # 项目目录
 CONDA_ENV="wmr1"                    # conda 环境名
 MODEL_PATH="Qwen/Qwen2.5-VL-3B-Instruct"   # Agent 策略模型
-WM_MODEL_PATH="Qwen/Qwen3-VL-8B"           # World Model (Code2World 基于此)
+WM_MODEL_PATH="GD-ML/Code2World"             # World Model (Code2World 微调权重，基于 Qwen3-VL-8B)
 DATA_DIR="$PROJECT_DIR/data"
 
 
@@ -73,13 +73,12 @@ echo "=== Step 2: 下载模型 ==="
 # Agent 策略模型 (~6GB)
 huggingface-cli download "$MODEL_PATH" --local-dir "$PROJECT_DIR/models/Qwen2.5-VL-3B-Instruct"
 
-# World Model (~16GB)
-# Code2World 的微调权重如果有，替换为实际路径；否则用 Qwen3-VL-8B 基座
-huggingface-cli download "$WM_MODEL_PATH" --local-dir "$PROJECT_DIR/models/Qwen3-VL-8B"
+# World Model (~16GB) — Code2World 微调权重（基于 Qwen3-VL-8B，在 AndroidCode 80K 对上 SFT + RL）
+huggingface-cli download "$WM_MODEL_PATH" --local-dir "$PROJECT_DIR/models/Code2World"
 
 # 验证
 ls -lh "$PROJECT_DIR/models/Qwen2.5-VL-3B-Instruct/config.json"
-ls -lh "$PROJECT_DIR/models/Qwen3-VL-8B/config.json"
+ls -lh "$PROJECT_DIR/models/Code2World/config.json"
 echo "Step 2 完成 ✓"
 
 
@@ -144,7 +143,7 @@ echo "=== Step 4: 启动 WM 服务 ==="
 #   cd $PROJECT_DIR
 #   conda activate $CONDA_ENV
 #   CUDA_VISIBLE_DEVICES=0 python Code2World/android_world/agents/wm_server.py \
-#       --model $PROJECT_DIR/models/Qwen3-VL-8B \
+#       --model $PROJECT_DIR/models/Code2World \
 #       --port 18888 \
 #       --device cuda:0
 #
