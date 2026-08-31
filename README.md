@@ -81,7 +81,7 @@ The length budget **anneals** from `max_steps` (lenient, early training) toward 
 <img src="assets/training_curve.png" alt="Training Curves" width="600"/>
 </div>
 
-Training curves on OSWorld (Qwen2.5-VL-7B). WM-R1 converges faster and reaches a higher final success rate (42.7\%) than UI-R1 (31.5\%) trained with real-environment GRPO. Shaded regions denote one standard deviation across three random seeds.
+Training curves on OSWorld (Qwen2.5-VL-7B). WM-R1 converges faster and reaches a higher final success rate than UI-R1 trained with real-environment GRPO. Shaded regions denote one standard deviation across three random seeds.
 
 ## Supported Environments
 
