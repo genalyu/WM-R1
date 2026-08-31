@@ -18,7 +18,7 @@
 CONDA_ENV="wmr1"                    # 训练环境
 CONDA_WM_ENV="wmr1"                 # WM 服务环境（可和训练同一个，也可分开）
 MODEL_PATH="Qwen2.5-VL-3B-Instruct"   # Agent 策略模型
-WM_MODEL_PATH="Code2World"           # World Model
+WM_MODEL_PATH="/public/share/114514/models/Code2World"           # World Model
 TRAIN_FILES="./data/guir1/train.jsonl"
 VAL_FILES="./data/guir1/train.jsonl"
 

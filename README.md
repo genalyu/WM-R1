@@ -1,6 +1,6 @@
 # WM-R1: Training GUI Agents to Reason with World Models via Reinforcement Learning
 
-**[![Paper](https://img.shields.io/badge/arXiv-WM—R1-blue)](https://arxiv.org/abs/2606.09961)** · **[中文文档](README_CN.md)**
+**[![Paper](https://img.shields.io/badge/arXiv-WM—R1-blue)](https://arxiv.org/abs/2608.27508)** · **[中文文档](README_CN.md)**
 ## Overview
 
 WM-R1 is a reinforcement learning framework that trains GUI agents to reason with **World Models (WM)** — using a VLM-based simulator to replace expensive real-environment interaction during RL training.
