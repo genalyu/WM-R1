@@ -46,7 +46,7 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
         self.connected = True
         print(f"WM client connected to vLLM server: {base_url}")
 
-    def post(self, goal, description, image, action, html_save_path=None, idx=0):
+    def post(self, goal, description, image, action, html_save_path=None, idx=0, request_kind="transition"):
         """Call vLLM OpenAI-compatible API to predict next state."""
         import base64
         import io
@@ -58,15 +58,18 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
 
         # Encode image to base64
         buf = io.BytesIO()
-        image.save(buf, format="JPEG")
+        image.convert("RGB").save(buf, format="JPEG")
         image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         user_text = self.USER_PROMPT.format(goal=goal, description=description, action=str(action))
+        if os.environ.get("WM_SPEED_ONLY", "0") == "1":
+            user_text += "\nSpeed benchmark: output a minimal complete HTML document under 100 tokens. Show only the main resulting UI label. Omit styling and detailed reconstruction. No explanation."
 
         payload = {
+            "wm_request_kind": request_kind,
             "model": "default",
             "messages": [
-                {"role": "system", "content": [{"type": "text", "text": self.SYSTEM_PROMPT}]},
+                {"role": "system", "content": [{"type": "text", "text": ("Predict the next UI after the action. Output only a minimal HTML document with the main new screen label. Format: <!DOCTYPE html><html><body>predicted label</body></html>. No CSS, no explanation, no reasoning. Under 60 tokens." if os.environ.get("WM_SPEED_ONLY") == "1" else self.SYSTEM_PROMPT)}]},
                 {
                     "role": "user",
                     "content": [
@@ -75,7 +78,7 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
                     ],
                 },
             ],
-            "max_tokens": 8192,
+            "max_tokens": int(os.environ.get("WM_MAX_OUTPUT_TOKENS", "8192")),
             "temperature": 0.0,
         }
 
@@ -105,6 +108,8 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
         result = json.loads(resp.read())
 
         output_text = result["choices"][0]["message"]["content"]
+        if os.environ.get("WM_SPEED_ONLY") != "1" and (result["choices"][0].get("finish_reason") == "length" or "</html>" not in output_text.lower()):
+            raise ValueError("WM did not generate a complete HTML document")
 
         # Extract clean HTML
         text = output_text.replace("```html", "").replace("```", "")
@@ -133,10 +138,11 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
         buf = BytesIO()
-        image.save(buf, format="JPEG")
+        image.convert("RGB").save(buf, format="JPEG")
         image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         payload = {
+            "wm_request_kind": "judge",
             "model": "default",
             "messages": [
                 {"role": "user", "content": [
@@ -144,7 +150,7 @@ Your task is to predict the **NEXT UI STATE** based on a screenshot of the curre
                     {"type": "text", "text": prompt},
                 ]},
             ],
-            "max_tokens": 4096,
+            "max_tokens": int(os.environ.get("WM_JUDGE_MAX_TOKENS", "4096")),
             "temperature": 0.0,
         }
 
@@ -208,7 +214,7 @@ class WorldModelEnv:
         self.step_idx = 0
         return {"screenshot": self.current_screenshot}
 
-    def step(self, action_text, pause=0.5):
+    def step(self, action_text, pause=0.5, request_kind="transition"):
         self.step_idx += 1
 
         # Predict next state using World Model
@@ -222,7 +228,8 @@ class WorldModelEnv:
                 image=Image.fromarray(self.current_screenshot),
                 action=action_text,
                 html_save_path=self.html_save_dir,
-                idx=self.step_idx
+                idx=self.step_idx,
+                **({"request_kind": request_kind} if inferencer_type == "QwenHTTPClient" else {})
             )
         else:
             # MLLMInferencer uses predict_mm via _post_figure_action
@@ -235,12 +242,12 @@ class WorldModelEnv:
                 idx=self.step_idx
             )
         
-        if next_state_array is not None:
+        if next_state_array is None:
+            raise RuntimeError("World model returned no next state")
+        # A preview must not commit the imagined state to the environment.
+        if request_kind != "preview":
             self.current_screenshot = next_state_array
-        
-        # In World Model mode, we don't have real rewards or step_done
-        # unless we implement a separate evaluator.
-        return {"screenshot": self.current_screenshot}, 0.0, False, {}
+        return {"screenshot": next_state_array}, 0.0, False, {}
 
     def pause(self):
         pass
@@ -985,7 +992,7 @@ class EnvWorker():
         # Select system prompt based on platform and mode
         if self.platform == "android":
             if not self.use_wm or self.n_wm_max == 0:
-                self.system_prompt = android_system_prompt_no_think
+                self.system_prompt = ("Task: {instruction}\nChoose the next Android action. Output only one line, no reasoning. Allowed: Action: tap(start_box='(540,1200)'), Action: scroll(start_box='(540,1200)', direction='down'), Action: press_back(). Replace example coordinates with your chosen numeric coordinates." if os.environ.get("WM_SPEED_ONLY") == "1" else android_system_prompt_no_think)
                 print(f'Using Android no-think prompt (use_wm={self.use_wm}, n_wm_max={self.n_wm_max})')
             else:
                 self.system_prompt = android_system_prompt
@@ -1088,7 +1095,7 @@ class EnvWorker():
         for msg in message:
             role = msg['role']
             content = self.load_content(msg['content'])
-            prompt = f'<think>{role}\n' + content + '</think>\n'
+            prompt = f'<|im_start|>{role}\n' + content + '<|im_end|>\n'
 
             cur_image_num = prompt.count("<|image_pad|>")
             if cur_image_num > 0:
@@ -1380,7 +1387,7 @@ class EnvWorker():
             }
         ]
 
-        self.history_images = [init_image]
+        self.history_images = [img_buf.getvalue()]
         self.history_messages = init_messages
 
         self.process_message(init_messages)
@@ -1397,6 +1404,7 @@ class EnvWorker():
     
     def step(self, prediction):
         self._is_init = False
+        completed_transition = 0
         
         # Check if the prediction contains a World Model interaction inside <think>
         # Format: <think> ... call_wm(action='...') ...  </think>
@@ -1421,6 +1429,16 @@ class EnvWorker():
                 action_desc = imagined_action
                 info = {"imaginary": True}
                 actions = [f"Imagined: {imagined_action}"]
+            elif os.environ.get("WM_SPEED_ONLY") == "1":
+                # Speed-only text-action interface: feed the model's own command to WM.
+                action_desc = prediction.strip()
+                if not action_desc:
+                    raise ValueError("Empty policy action")
+                if re.search(r"(?:Action:\s*)?(?:wait|finished|finish|done|fail)\s*\(", action_desc, re.I):
+                    actions = ["WAIT" if re.search(r"wait\s*\(", action_desc,re.I) else "DONE"]
+                else:
+                    actions = [action_desc]
+                info = {"simulated": True, "text_action_speed_mode": True}
             else:
                 # Regular turn: also use World Model for simulation
                 # Resolution: Android = 2400×1080 (portrait), Desktop = 1080×1920 (landscape)
@@ -1475,7 +1493,7 @@ class EnvWorker():
                 obs_screenshot = self.history_images[-1]
             else:
                 # Execute simulation in WorldModelEnv
-                obs, reward, step_done, _ = self.env.step(action_desc)
+                obs, reward, step_done, _ = self.env.step(action_desc, request_kind="preview" if is_imaginary else "transition")
                 obs_screenshot = obs['screenshot']
 
                 # Convert to valid JPEG bytes
@@ -1508,6 +1526,7 @@ class EnvWorker():
                         raise ValueError("WM returned invalid screenshot bytes")
                 else:
                     raise ValueError(f"WM screenshot has unexpected type: {type(obs_screenshot)}")
+                completed_transition = int(not is_imaginary)
             
             format_reward = 0.0
         except ValueError as e:
@@ -1560,6 +1579,7 @@ class EnvWorker():
                     'obs_messages': None,
                     'is_done': self._is_done,
                     'format_reward': format_reward,
+                    'completed_env_transitions': completed_transition,
                     'n_wm': self.n_wm
                 }
 
@@ -1590,7 +1610,8 @@ class EnvWorker():
                 'obs_messages': self.history_messages,
                 'is_done': self._is_done,
                 'format_reward': format_reward,
-                'n_wm': self.n_wm
+                'completed_env_transitions': completed_transition,
+                    'n_wm': self.n_wm
             }
         else:
             self.process_message(self.history_messages[-1:]) # gpt answer only
@@ -1599,7 +1620,8 @@ class EnvWorker():
                 'obs_messages': None,
                 'is_done': self._is_done,
                 'format_reward': format_reward,
-                'n_wm': self.n_wm
+                'completed_env_transitions': completed_transition,
+                    'n_wm': self.n_wm
             }
             
     

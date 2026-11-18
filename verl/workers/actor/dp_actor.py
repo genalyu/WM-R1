@@ -103,7 +103,10 @@ class DataParallelPPOActor(BasePPOActor):
                     prompt_length = seqlen - response_length
                     if prompt_length > 0:
                         response_part = input_ids[:, prompt_length:]  # (bsz, response_length)
-                        generated_image_tokens = (response_part == image_token_id).sum().item()
+                        generated_image_mask = response_part == image_token_id
+                        if "response_mask" in micro_batch:
+                            generated_image_mask = generated_image_mask & micro_batch["response_mask"].bool()
+                        generated_image_tokens = generated_image_mask.sum().item()
                         if generated_image_tokens > 0:
                             print(
                                 f"[WARN] Model generated {generated_image_tokens} image tokens in responses "
@@ -111,7 +114,7 @@ class DataParallelPPOActor(BasePPOActor):
                             )
                             input_ids = input_ids.clone()
                             input_ids[:, prompt_length:] = response_part.masked_fill(
-                                response_part == image_token_id, 0
+                                generated_image_mask, 0
                             )
                 elif grid.numel() == 0 and pv.numel() == 0:
                     # Both empty — no images, that's fine
@@ -188,7 +191,17 @@ class DataParallelPPOActor(BasePPOActor):
             logits: torch.Tensor = output.logits
             logits.div_(temperature)
             logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
-            log_probs = self.log_probs_from_logits(logits, responses)  # (bsz, response_length)
+            if os.environ.get("WM_SPEED_ONLY") == "1" and "response_mask" in micro_batch:
+                # Only action-token probabilities enter the PPO objective.
+                mask = micro_batch["response_mask"].bool()
+                if mask.any():
+                    selected = self.log_probs_from_logits(logits[mask], responses[mask])
+                    log_probs = torch.zeros(responses.shape,device=selected.device,dtype=selected.dtype)
+                    log_probs[mask] = selected
+                else:
+                    log_probs = logits[..., 0].float() * 0
+            else:
+                log_probs = self.log_probs_from_logits(logits, responses)  # (bsz, response_length)
 
         return log_probs
 
@@ -228,7 +241,7 @@ class DataParallelPPOActor(BasePPOActor):
         self.actor_module.eval()
 
         temperature = data.meta_info["temperature"]
-        select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
+        select_keys = ["responses", "input_ids", "attention_mask", "position_ids", "response_mask"]
         if "multi_modal_inputs" in data.non_tensor_batch.keys():
             non_tensor_select_keys = ["multi_modal_inputs"]
         else:

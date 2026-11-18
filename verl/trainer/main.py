@@ -134,7 +134,8 @@ def main():
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
                 "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
-                "OMP_NUM_THREADS": "4",
+                "OMP_NUM_THREADS": "1",
+                **{k:v for k,v in os.environ.items() if k != "WANDB_API_KEY" and (k.startswith(("WM_", "WANDB_", "VLLM_", "TRITON_")) or k in ("HTTP_PROXY","HTTPS_PROXY","NO_PROXY"))},
             }})
         else:
             # No existing cluster or it died — start fresh
@@ -151,7 +152,8 @@ def main():
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
                 "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
-                "OMP_NUM_THREADS": "4",
+                "OMP_NUM_THREADS": "1",
+                **{k:v for k,v in os.environ.items() if k != "WANDB_API_KEY" and (k.startswith(("WM_", "WANDB_", "VLLM_", "TRITON_")) or k in ("HTTP_PROXY","HTTPS_PROXY","NO_PROXY"))},
             }})
     
     print(ray.cluster_resources().keys())

@@ -323,10 +323,10 @@ class RayPPOTrainer:
         # 2) 按 round-robin 方式，把每个 env worker pin 到不同节点
         self.env_workers = []
         for i in range(num_envs):
-            options = {"name": f"env_worker_{i}"}
+            options = {"name": f"env_worker_{i}", "num_cpus": 0.25}
             if ip_labels:
                 ip_label = ip_labels[i % len(ip_labels)]
-                options["resources"] = { ip_label: 1 }   # 保证这个 actor 一定被调度到拥有 ip_label 资源的节点
+                options["resources"] = { ip_label: 0.001 }   # 保证这个 actor 一定被调度到拥有 ip_label 资源的节点
 
             w = EnvWorker.options(**options).remote(i, max_steps, self.config)
             self.env_workers.append(w)
@@ -439,7 +439,7 @@ class RayPPOTrainer:
 
             env_outputs = reset_outputs
 
-            for step_idx in range(self.config.env.max_steps):
+            for step_idx in range(self.config.env.max_steps + self.config.env.n_wm_max):
                 print(f"Step {step_idx} of {self.config.env.max_steps}: {ray.get([worker.is_done.remote() for worker in self.env_workers])}")
                 num_workers = len(self.env_workers)
                 wg_world_size = self.actor_rollout_wg.world_size
@@ -804,6 +804,8 @@ class RayPPOTrainer:
                 return
 
         rollout_n = self.config.worker.rollout.n
+        throughput_run_started_at = time.monotonic()
+        completed_training_env_steps = 0
         for episode_idx in tqdm(range(self.config.trainer.total_episodes), desc="Episode", position=0):
             self.current_episode = episode_idx
             iterator = iter(tqdm(self.train_dataloader, desc="Running step", position=1))
@@ -819,6 +821,17 @@ class RayPPOTrainer:
 
                 # batch_dict = batch_dict_next_batch
                 # task_configs, reset_envs_object = task_configs_next_batch, reset_envs_object_next_batch
+
+                throughput_started_at = time.monotonic()
+                completed_iteration_env_steps = 0
+                wm_metrics_before = None
+                if self.config.env.use_wm and self.config.env.wm_http_url:
+                    try:
+                        import urllib.request
+                        with urllib.request.urlopen(self.config.env.wm_http_url.rstrip("/") + "/metrics", timeout=3) as response:
+                            wm_metrics_before = json.load(response)
+                    except Exception as exc:
+                        print("WM timing snapshot unavailable:", type(exc).__name__)
 
                 task_configs, reset_envs_object = self.start_reset_envs(batch_dict)
 
@@ -847,7 +860,7 @@ class RayPPOTrainer:
                         print(f"reset_time: {timing_raw['env_reset']}")
 
                         env_outputs = reset_outputs
-                        for step_idx in range(self.config.env.max_steps):
+                        for step_idx in range(self.config.env.max_steps + self.config.env.n_wm_max):
                             is_done_stats = ray.get([worker.is_done.remote() for worker in self.env_workers])
                             print(f'step_idx: {step_idx}, finished: {sum(is_done_stats)}')
 
@@ -880,6 +893,7 @@ class RayPPOTrainer:
                                     worker.step.remote(action_text) for worker, action_text in zip(cur_valid_envs, response_texts)
                                 ]
                                 env_outputs = ray.get(futures)
+                                completed_iteration_env_steps += sum(x.get("completed_env_transitions", 0) for x in env_outputs)
                             print('env_step_time: ', timing_raw['env_step'])
                             # get format rewards
                             for single_output in env_outputs:
@@ -923,8 +937,8 @@ class RayPPOTrainer:
                     with _timer("replay", timing_raw):
                         batch = self.apply_replay(task_configs, batch)
 
-                    batch.batch["responses"] = batch.batch["input_ids"]
-                    batch.batch["response_mask"] = batch.batch["labels"]!=-100
+                    batch.batch["responses"] = batch.batch["input_ids"][:, 1:]
+                    batch.batch["response_mask"] = batch.batch["labels"][:, 1:] != -100
 
                     print('prepare_grpo_inputs_time: ', timing_raw['prepare_grpo_inputs'], '| batch size: ', len(batch))
 
@@ -1100,6 +1114,28 @@ class RayPPOTrainer:
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+                completed_training_env_steps += completed_iteration_env_steps
+                metrics["throughput/completed_env_steps"] = completed_iteration_env_steps
+                metrics["throughput/completed_env_steps_per_second"] = completed_iteration_env_steps / (time.monotonic() - throughput_started_at)
+                metrics["throughput/cumulative_completed_env_steps"] = completed_training_env_steps
+                metrics["throughput/cumulative_env_steps_per_second"] = completed_training_env_steps / (time.monotonic() - throughput_run_started_at)
+
+                if wm_metrics_before is not None:
+                    try:
+                        with urllib.request.urlopen(self.config.env.wm_http_url.rstrip("/") + "/metrics", timeout=3) as response:
+                            wm_metrics_after = json.load(response)
+                        elapsed = time.monotonic() - throughput_started_at
+                        metrics["wm/train_iteration_seconds"] = elapsed
+                        for kind in ("transition", "preview", "judge"):
+                            count = wm_metrics_after.get(kind + "_requests", 0) - wm_metrics_before.get(kind + "_requests", 0)
+                            inference = wm_metrics_after.get(kind + "_inference_seconds", 0) - wm_metrics_before.get(kind + "_inference_seconds", 0)
+                            metrics[f"wm/{kind}_requests"] = count
+                            metrics[f"wm/{kind}_requests_per_training_second"] = count / elapsed
+                            if count:
+                                metrics[f"wm/{kind}_mean_inference_seconds"] = inference / count
+                    except Exception as exc:
+                        print("WM timing collection failed:", type(exc).__name__)
 
                 self.logger.log(data=metrics, step=self.global_step)
 

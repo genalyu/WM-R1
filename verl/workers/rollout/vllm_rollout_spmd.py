@@ -71,9 +71,16 @@ class vLLMRollout(BaseRollout):
 
         vllm_init_kwargs = {}
         if config.limit_images > 0:
-            vllm_init_kwargs = {"limit_mm_per_prompt": {"image": config.limit_images}}
+            vllm_init_kwargs = {"limit_mm_per_prompt": {"image": config.limit_images, "video": 0}}
         if config.tensor_parallel_size > 1:
             vllm_init_kwargs["distributed_executor_backend"] = "external_launcher"
+
+        if os.environ.get("WM_SPEED_ONLY") == "1":
+            vllm_init_kwargs["mm_processor_kwargs"] = {"min_pixels": 784, "max_pixels":3136}
+            # xFormers' bundled Hopper kernel is incompatible with this sm120 GPU.
+            from vllm.model_executor.models import qwen2_5_vl
+            from vllm.platforms.interface import _Backend
+            qwen2_5_vl.get_vit_attn_backend = lambda support_fa=False: _Backend.TORCH_SDPA
 
         self.inference_engine = LLM(
             model=model_path,
@@ -83,7 +90,7 @@ class vLLMRollout(BaseRollout):
             gpu_memory_utilization=config.gpu_memory_utilization,
             enforce_eager=config.enforce_eager,
             max_model_len=config.prompt_length + config.response_length + 4000,
-            # max_num_batched_tokens=config.max_num_batched_tokens,
+            max_num_batched_tokens=config.max_num_batched_tokens,
             enable_sleep_mode=True,
             disable_custom_all_reduce=True,
             disable_mm_preprocessor_cache=True,

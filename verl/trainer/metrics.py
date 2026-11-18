@@ -36,12 +36,12 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = False) -> Dict[str
     # prompt_mask = batch.batch["attention_mask"][:, :-max_response_length].bool()
     # response_mask = batch.batch["attention_mask"][:, -max_response_length:].bool()
     prompt_mask = (torch.logical_and(batch.batch["attention_mask"], batch.batch["labels"] == -100)).bool()
-    response_mask = (batch.batch["labels"] != -100).bool()
+    response_mask = batch.batch["response_mask"].bool()
 
     max_prompt_length = prompt_mask.size(-1)
     prompt_length = prompt_mask.sum(-1).float()
     response_length = response_mask.sum(-1).float()
-    num_images = (batch.batch["input_ids"] == 151655).bool().sum(-1).float() // 2691 # image_pad
+    num_images = batch.batch.get("traj_len", torch.ones_like(response_length)).reshape(-1).float().clamp_min(1)
     response_length = response_length / num_images # average response length per action
 
     valid_adv = torch.masked_select(advantages, response_mask)

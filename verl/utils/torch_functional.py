@@ -56,25 +56,17 @@ def log_probs_from_logits(logits: torch.Tensor, labels: torch.Tensor) -> torch.T
     Returns:
         torch.Tensor: log probs of the labels, shape (batch_size, seqlen)
     """
+    target_shape = labels.shape
+    if logits.shape[:-1] != target_shape:
+        raise ValueError(f"Logits/labels must align: {logits.shape} versus {target_shape}")
     vocab_dim = logits.shape[-1]
-    batch_size = logits.shape[0]
-    logits = logits.contiguous().view(-1, vocab_dim)
-    labels = labels.contiguous().view(-1)
-
-    # Flash-attn cross_entropy_loss silently truncates mismatched lengths.
-    # Torch fallback must do the same.
-    min_len = min(logits.size(0), labels.size(0))
-    if logits.size(0) != labels.size(0):
-        logits = logits[:min_len]
-        labels = labels[:min_len]
-
+    flat_logits = logits.contiguous().reshape(-1, vocab_dim)
+    flat_labels = labels.contiguous().reshape(-1)
     if FLAH_ATTN_CROSS_ENTROPY_LOSS_AVAILABLE:
-        output = log_probs_from_logits_flash_attn(logits, labels)
-    else:  # fall back to torch kernel, upcast logits to fp32
-        output = F.cross_entropy(logits.float(), labels, reduction="none")
-
-    seq_len = min_len // batch_size
-    return output.view(batch_size, seq_len)
+        output = log_probs_from_logits_flash_attn(flat_logits, flat_labels)
+    else:
+        output = -F.cross_entropy(flat_logits.float(), flat_labels, reduction="none")
+    return output.reshape(target_shape)
 
 
 def masked_mean(values: torch.Tensor, mask: torch.Tensor, dim: int = None, eps: float = 1e-8) -> torch.Tensor:
@@ -171,74 +163,48 @@ def postprocess_data(
     pixel_values=None,
     image_grid_thw=None,
 ):
-    """Pad or truncate data."""
-    assert truncation in ["left", "right", "error"]
+    """Pad/crop tokens and labels together; retain only complete visual features."""
+    assert truncation in ("left", "right", "error")
     seq_length = len(input_ids)
-
-    # Track image tokens before truncation to sync pixel_values
-    n_image_tokens_before = 0
-    if image_token_id is not None:
-        n_image_tokens_before = (input_ids == image_token_id).sum().item()
-
-    if seq_length < max_length:
-        input_ids = pad_sequence_to_length(
-            input_ids, max_seq_len=max_length, pad_token_id=pad_token_id, left_pad=left_pad
-        )
-        attention_mask = pad_sequence_to_length(
-            attention_mask, max_seq_len=max_length, pad_token_id=0, left_pad=left_pad
-        )
-        position_ids = pad_sequence_to_length(position_ids, max_seq_len=max_length, pad_token_id=0, left_pad=left_pad)
+    if seq_length > max_length:
+        if truncation == "error":
+            raise ValueError(f"{seq_length} exceeds {max_length}")
+        start = seq_length-max_length if truncation == "left" else 0
+        end = start+max_length
+        original_image_positions = (input_ids == image_token_id).nonzero().flatten() if image_token_id is not None else None
+        input_ids = input_ids[start:end].clone()
+        attention_mask = attention_mask[start:end].clone()
+        position_ids = position_ids[..., start:end]
         if labels is not None:
-            labels = pad_sequence_to_length(labels, max_seq_len=max_length, pad_token_id=-100, left_pad=left_pad)
-    elif seq_length > max_length:
-        if truncation == "left":  # actually, left truncation may not be reasonable
-            input_ids = input_ids[..., -max_length:]
-            attention_mask = attention_mask[..., -max_length:]
-            position_ids = position_ids[..., -max_length:]
-        elif truncation == "right":
-            input_ids = input_ids[..., :max_length]
-            attention_mask = attention_mask[..., :max_length]
-            position_ids = position_ids[..., :max_length]
-        elif truncation == "error":
-            raise NotImplementedError(f"{seq_length} is larger than {max_length}.")
-        else:
-            raise NotImplementedError(f"Unknown truncation method {truncation}.")
-
-        # If input_ids was truncated and pixel_values provided, adjust to match
-        if pixel_values is not None and image_grid_thw is not None and n_image_tokens_before > 0:
-            n_image_tokens_after = (input_ids == image_token_id).sum().item()
-            if n_image_tokens_after < n_image_tokens_before:
-                merge_size = 2
-                # Compute tokens per image from grid dimensions
-                tokens_per_image = []
-                for t, h, w in image_grid_thw.tolist():
-                    tokens_per_image.append(t * (h // merge_size) * (w // merge_size))
-                tokens_dropped = n_image_tokens_before - n_image_tokens_after
-                # Count how many complete trailing images were dropped
-                n_images_to_remove = 0
-                dropped_so_far = 0
-                for i in range(len(tokens_per_image) - 1, -1, -1):
-                    dropped_so_far += tokens_per_image[i]
-                    if dropped_so_far <= tokens_dropped:
-                        n_images_to_remove += 1
-                    else:
-                        # Partial image dropped — also remove it to avoid mismatch
-                        n_images_to_remove += 1
-                        break
-                if n_images_to_remove >= len(tokens_per_image):
-                    image_grid_thw = image_grid_thw[:0]
-                    pixel_values = pixel_values[:0]
-                else:
-                    image_grid_thw = image_grid_thw[:len(image_grid_thw) - n_images_to_remove]
-                    remaining_tokens = sum(tokens_per_image[:len(tokens_per_image) - n_images_to_remove])
-                    n_features_after = remaining_tokens * (merge_size ** 2)
-                    if n_features_after < pixel_values.shape[0]:
-                        pixel_values = pixel_values[:n_features_after]
-
-    if labels is not None:
-        return input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw
-    else:
-        return input_ids, attention_mask, position_ids, None, pixel_values, image_grid_thw
+            labels = labels[start:end].clone()
+        if pixel_values is not None and image_grid_thw is not None and original_image_positions is not None:
+            token_offset = patch_offset = 0
+            grids, patches = [], []
+            for grid in image_grid_thw:
+                t,h,w = [int(v) for v in grid]
+                n_patches = t*h*w
+                n_tokens = t*(h//2)*(w//2)
+                positions = original_image_positions[token_offset:token_offset+n_tokens]
+                inside = positions[(positions >= start) & (positions < end)]-start
+                if len(inside) == n_tokens:
+                    grids.append(grid)
+                    patches.append(pixel_values[patch_offset:patch_offset+n_patches])
+                elif len(inside):
+                    input_ids[inside] = pad_token_id
+                    attention_mask[inside] = 0
+                    if labels is not None:
+                        labels[inside] = -100
+                token_offset += n_tokens
+                patch_offset += n_patches
+            image_grid_thw = torch.stack(grids) if grids else image_grid_thw[:0]
+            pixel_values = torch.cat(patches) if patches else pixel_values[:0]
+    elif seq_length < max_length:
+        input_ids = pad_sequence_to_length(input_ids,max_seq_len=max_length,pad_token_id=pad_token_id,left_pad=left_pad)
+        attention_mask = pad_sequence_to_length(attention_mask,max_seq_len=max_length,pad_token_id=0,left_pad=left_pad)
+        position_ids = pad_sequence_to_length(position_ids,max_seq_len=max_length,pad_token_id=0,left_pad=left_pad)
+        if labels is not None:
+            labels = pad_sequence_to_length(labels,max_seq_len=max_length,pad_token_id=-100,left_pad=left_pad)
+    return input_ids, attention_mask, position_ids, labels, pixel_values, image_grid_thw
 
 
 def get_constant_schedule_with_warmup(

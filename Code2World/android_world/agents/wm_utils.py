@@ -162,7 +162,7 @@ def _get_playwright():
     return _sync_playwright, _PlaywrightTimeoutError
 
 
-def render_aligned_png(html_path, output_path):
+def _render_aligned_png_legacy(html_path, output_path):
     """
     智能渲染 HTML 为 PNG。
     策略：
@@ -251,6 +251,36 @@ def render_aligned_png(html_path, output_path):
 
         return success
 
+
+# Each worker owns its Playwright instance: sync API is thread-affine.
+import threading
+from concurrent.futures import ThreadPoolExecutor
+_render_local = threading.local()
+_render_pool = ThreadPoolExecutor(max_workers=int(os.environ.get("WM_RENDER_WORKERS", "8")))
+
+def _render_fast(html_path, output_path):
+    if not hasattr(_render_local, "browser") or not _render_local.browser.is_connected():
+        sync_playwright, _ = _get_playwright()
+        _render_local.playwright = sync_playwright().start()
+        _render_local.browser = _render_local.playwright.chromium.launch(headless=True)
+    context = _render_local.browser.new_context(viewport={"width":1080,"height":2400}, device_scale_factor=1.0)
+    try:
+        page = context.new_page()
+        # Fast profile uses local resources only, consistently across all requests.
+        page.route("http://**", lambda route: route.abort())
+        page.route("https://**", lambda route: route.abort())
+        page.goto(Path(html_path).resolve().as_uri(), wait_until="load", timeout=15000)
+        page.evaluate("async () => { await document.fonts.ready; await Promise.all(Array.from(document.images).map(i => i.decode().catch(() => {}))); }")
+        page.screenshot(path=output_path, omit_background=True)
+        return True
+    finally:
+        context.close()
+
+from pathlib import Path
+def render_aligned_png(html_path, output_path):
+    if os.environ.get("WM_FAST_RENDER", "0") == "1":
+        return _render_pool.submit(_render_fast, html_path, output_path).result(timeout=60)
+    return _render_aligned_png_legacy(html_path, output_path)
 
 # PNG图像与image_array的相互转换函数
 def png_to_image_array(png_path: str) -> np.ndarray:

@@ -43,12 +43,21 @@ class WMHandler(BaseHTTPRequestHandler):
     processor = None
     html_dir = "/tmp/wm_htmls"
     _lock = None  # Prevent concurrent inference to avoid GPU OOM
+    _metrics_lock = Lock()
+    metrics = {}
 
     def log_message(self, *args):
         pass
 
     def do_GET(self):
-        if self.path == "/health":
+        if self.path == "/metrics":
+            with self._metrics_lock:
+                payload = json.dumps(dict(self.metrics)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(payload)
+        elif self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -68,8 +77,22 @@ class WMHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(content_length))
 
             try:
+                queued_at = time.monotonic()
                 with self._lock:
+                    started_at = time.monotonic()
                     output_text = self.infer_from_openai_messages(body)
+                finished_at = time.monotonic()
+                started_at = getattr(self, "batch_started_at", started_at)
+                finished_at = getattr(self, "batch_finished_at", finished_at)
+                kind = body.get("wm_request_kind", "unspecified")
+                if kind not in ("transition", "preview", "judge"):
+                    kind = "unspecified"
+                with self._metrics_lock:
+                    self.metrics[kind + "_requests"] = self.metrics.get(kind + "_requests", 0) + 1
+                    self.metrics[kind + "_inference_seconds"] = self.metrics.get(kind + "_inference_seconds", 0.0) + finished_at - started_at
+                    self.metrics[kind + "_output_tokens"] = self.metrics.get(kind + "_output_tokens", 0) + getattr(self, "last_generation_tokens", 0)
+
+                print(json.dumps({"event": "wm_request", "timestamp_utc": datetime.utcnow().isoformat() + "Z", "kind": body.get("wm_request_kind", "unspecified"), "queue_seconds": started_at - queued_at, "inference_seconds": finished_at - started_at, "output_tokens": getattr(self, "last_generation_tokens", None), "batch_size": getattr(self, "last_batch_size", 1)}), flush=True)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -162,6 +185,7 @@ class WMHandler(BaseHTTPRequestHandler):
         generated_ids_trimmed = [
             out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
+        self.last_generation_tokens = len(generated_ids_trimmed[0])
         output_text = self.processor.batch_decode(
             generated_ids_trimmed,
             skip_special_tokens=True,
